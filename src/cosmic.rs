@@ -101,15 +101,34 @@ impl Appearance {
     }
 }
 
-fn palette_dir() -> Option<PathBuf> {
+pub fn watched_directories() -> Vec<PathBuf> {
+    let Some(root) = config_root() else {
+        return Vec::new();
+    };
+    [
+        "com.system76.CosmicTheme.Mode/v1",
+        "com.system76.CosmicTheme.Dark/v2",
+        "com.system76.CosmicTheme.Light/v2",
+    ]
+    .iter()
+    .map(|leaf| root.join(leaf))
+    .filter(|path| path.is_dir())
+    .collect()
+}
+
+fn config_root() -> Option<PathBuf> {
     let roots = [
         std::env::var_os("XDG_CONFIG_HOME").map(|base| PathBuf::from(base).join("cosmic")),
         std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config/cosmic")),
     ];
-    let root = roots.into_iter().flatten().find(|path| {
+    roots.into_iter().flatten().find(|path| {
         path.join("com.system76.CosmicTheme.Mode/v1/is_dark")
             .exists()
-    })?;
+    })
+}
+
+fn palette_dir() -> Option<PathBuf> {
+    let root = config_root()?;
     let dark = std::fs::read_to_string(root.join("com.system76.CosmicTheme.Mode/v1/is_dark"))
         .map_or(true, |value| value.trim() != "false");
     Some(

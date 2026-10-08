@@ -6,6 +6,7 @@ mod ffi;
 mod gtk;
 mod style;
 mod toolkit;
+mod watch;
 mod wayland;
 
 use std::cell::UnsafeCell;
@@ -48,8 +49,10 @@ struct Session {
     blur: Option<BlurManager>,
     decorations: Option<Decorations>,
     glass: Option<Glass>,
+    provider: *mut c_void,
     searched_for_blur: bool,
     stylesheet_installed: bool,
+    watching: bool,
 }
 
 impl Session {
@@ -84,13 +87,23 @@ impl Session {
         let Some(css) = self.compose_stylesheet(frosted) else {
             return;
         };
-        self.toolkit
+        self.provider = self
+            .toolkit
             .add_stylesheet(&self.gtk, surface, display, &css);
         log!(
             "stylesheet applied ({}, frosted glass {})",
             self.toolkit.name(),
             if frosted { "on" } else { "off" }
         );
+    }
+
+    unsafe fn start_watching(&mut self) {
+        if self.watching {
+            return;
+        }
+        let directories = cosmic::watched_directories();
+        let borrowed: Vec<&std::path::Path> = directories.iter().map(AsRef::as_ref).collect();
+        self.watching = watch::directories(&borrowed, on_appearance_changed);
     }
 
     fn compose_stylesheet(&self, frosted: bool) -> Option<CString> {
@@ -211,8 +224,10 @@ unsafe fn start_session() -> Option<()> {
         blur: None,
         decorations,
         glass,
+        provider: ptr::null_mut(),
         searched_for_blur: false,
         stylesheet_installed: false,
+        watching: false,
     });
 
     add_emission_hook(
@@ -307,6 +322,7 @@ unsafe fn attach_blur(window: *mut c_void) -> Option<()> {
     let frosted =
         session.glass.is_some() && session.ensure_blur(window, surface, wl_surface, display);
     session.install_stylesheet(surface, display, frosted);
+    session.start_watching();
     Some(())
 }
 
@@ -367,6 +383,44 @@ impl Session {
         }
         true
     }
+}
+
+fn on_appearance_changed() {
+    let _ = catch_unwind(AssertUnwindSafe(|| unsafe {
+        let Some(session) = session_mut() else {
+            return;
+        };
+        let appearance = Appearance::from_config();
+        session.decorations = appearance.as_ref().map(|found| found.decorations);
+        session.glass = resolve_glass(appearance.as_ref());
+
+        let frosted = session.glass.is_some()
+            && session
+                .blur
+                .as_ref()
+                .is_some_and(BlurManager::supports_blur);
+        log!(
+            "appearance changed, frosted glass {}",
+            if frosted { "on" } else { "off" }
+        );
+        if !session.provider.is_null() {
+            if let Some(css) = session.compose_stylesheet(frosted) {
+                session.toolkit.load_stylesheet(session.provider, &css);
+            }
+        }
+
+        let list_toplevels = session.gtk.window_list_toplevels;
+        let list_free = session.gtk.list_free;
+        let toplevels = list_toplevels();
+        let mut node = toplevels;
+        while !node.is_null() {
+            defer_apply((*node).data);
+            node = (*node).next;
+        }
+        if !toplevels.is_null() {
+            list_free(toplevels);
+        }
+    }));
 }
 
 fn resolve_glass(appearance: Option<&Appearance>) -> Option<Glass> {

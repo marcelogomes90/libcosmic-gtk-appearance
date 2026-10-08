@@ -24,6 +24,10 @@ GDK API leads to its `wl_surface`. The library asks the compositor for the blur
 through `ext_background_effect_v1`, and installs a stylesheet that makes the
 window translucent and flattens the title bar.
 
+It then watches the COSMIC configuration and follows it: change the theme, the
+accent colour or the frosted glass setting and open windows pick it up without
+being restarted.
+
 If anything fails — no compositor support, an unrecognised toolkit, frosted
 glass turned off — it gives up quietly and the application opens exactly as it
 would without it.
@@ -98,10 +102,6 @@ views.
 
 ## Limits
 
-- Applications that only hand a request to a background service are out of
-  reach: the window belongs to a process that never inherited the preload.
-- So are those that load GTK through `dlopen` after startup, since the library
-  looks for GTK as the process begins.
 - Popovers, menus and tooltips are separate surfaces and stay opaque on purpose.
 - An application painting its own opaque background still wins, because GTK
   flattens every layer before the compositor sees it.

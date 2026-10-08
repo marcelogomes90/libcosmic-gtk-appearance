@@ -75,30 +75,37 @@ impl Toolkit {
         }
     }
 
+    pub unsafe fn load_stylesheet(&self, provider: *mut c_void, css: &CStr) {
+        match self {
+            Toolkit::Gtk3(s) => {
+                (s.css_provider_load_from_data)(provider, css.as_ptr(), -1, ptr::null_mut());
+            }
+            Toolkit::Gtk4(s) => (s.css_provider_load_from_string)(provider, css.as_ptr()),
+        }
+    }
+
     pub unsafe fn add_stylesheet(
         &self,
         gtk: &Gtk,
         surface: *mut c_void,
         display: *mut c_void,
         css: &CStr,
-    ) {
+    ) -> *mut c_void {
         let provider = (gtk.css_provider_new)();
         if provider.is_null() {
-            return;
+            return provider;
         }
+        self.load_stylesheet(provider, css);
         match self {
             Toolkit::Gtk3(s) => {
-                (s.css_provider_load_from_data)(provider, css.as_ptr(), -1, ptr::null_mut());
                 let screen = (s.window_get_screen)(surface);
                 if !screen.is_null() {
                     (s.add_provider_for_screen)(screen, provider, OVERRIDE_PRIORITY);
                 }
             }
-            Toolkit::Gtk4(s) => {
-                (s.css_provider_load_from_string)(provider, css.as_ptr());
-                (s.add_provider_for_display)(display, provider, OVERRIDE_PRIORITY);
-            }
+            Toolkit::Gtk4(s) => (s.add_provider_for_display)(display, provider, OVERRIDE_PRIORITY),
         }
+        provider
     }
 
     pub fn stylesheet(&self, glass: Option<&Glass>, decorations: Option<&Decorations>) -> String {
