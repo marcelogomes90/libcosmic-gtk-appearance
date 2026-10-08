@@ -9,6 +9,17 @@ command -v flatpak >/dev/null || { echo "flatpak is not installed, nothing to do
 
 apps() { flatpak list --app --columns=application 2>/dev/null; }
 
+reaches_cosmic_config() {
+    local token
+    for token in $(flatpak info --show-permissions "$1" 2>/dev/null \
+                   | sed -n 's/^filesystems=//p' | tr ';' ' '); do
+        case "${token%%:*}" in
+            host | home | xdg-config | xdg-config/cosmic) return 0 ;;
+        esac
+    done
+    return 1
+}
+
 # An override is ours alone when every line in it is one we wrote.
 ours_alone() {
     local file=$1 line rest
@@ -33,15 +44,21 @@ case "$action" in
 enable)
     [ -d "$modules" ] || { echo "run 'just install-user' first" >&2; exit 1; }
     for app in $(apps); do
-        if [ -e "$overrides/$app" ] && ! ours_alone "$overrides/$app"; then
-            echo "skipped $app, it carries an override of its own"
-            continue
+        if [ -e "$overrides/$app" ]; then
+            if ! ours_alone "$overrides/$app"; then
+                echo "skipped $app, it carries an override of its own"
+                continue
+            fi
+            flatpak override --user --reset "$app"
         fi
-        flatpak override --user \
-            --filesystem="$modules":ro \
-            --filesystem=xdg-config/cosmic:ro \
-            --env=GIO_EXTRA_MODULES="$modules" \
-            "$app" && echo "granted to $app"
+        set -- --filesystem="$modules":ro --env=GIO_EXTRA_MODULES="$modules"
+        if reaches_cosmic_config "$app"; then
+            note=", keeping the config access it came with"
+        else
+            note=""
+            set -- "$@" --filesystem=xdg-config/cosmic:ro
+        fi
+        flatpak override --user "$@" "$app" && echo "granted to $app$note"
     done
     ;;
 disable)

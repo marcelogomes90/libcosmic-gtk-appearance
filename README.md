@@ -24,9 +24,15 @@ GDK API leads to its `wl_surface`. The library asks the compositor for the blur
 through `ext_background_effect_v1`, and installs a stylesheet that makes the
 window translucent and flattens the title bar.
 
-It then watches the COSMIC configuration and follows it: change the theme, the
-accent colour or the frosted glass setting and open windows pick it up without
-being restarted.
+COSMIC hands its palette to GTK by generating `~/.config/gtk-3.0/gtk.css` and
+`~/.config/gtk-4.0/gtk.css`, and GTK reads that file once, on startup: change
+the theme and every window already open keeps the old colours until it is
+restarted. The stylesheet this library installs sits above the user one, so it
+carries the colour definitions along and reloads them with everything else.
+
+It then watches the COSMIC configuration and the stylesheet COSMIC generates,
+and follows both: change the theme, the accent colour or the frosted glass
+setting and open windows pick it up without being restarted.
 
 If anything fails — no compositor support, an unrecognised toolkit, frosted
 glass turned off — it gives up quietly and the application opens exactly as it
@@ -85,6 +91,13 @@ An application that already carries an override of its own is left untouched in
 both directions and reported, since adding ours there would leave the undo
 unable to tell the two apart.
 
+The grant on the COSMIC configuration is read-only, which is all the library
+needs. An application that already reaches that directory keeps the access it
+came with and is told so, because a flatpak override narrows what the manifest
+gave: a read-only grant on top of a writable one takes the write away, and
+COSMIC applications — `cosmic-ext-tweaks` applying a theme, an applet saving its
+settings — write there.
+
 ## Settings
 
 | variable | effect |
@@ -105,6 +118,8 @@ views.
 - Popovers, menus and tooltips are separate surfaces and stay opaque on purpose.
 - An application painting its own opaque background still wins, because GTK
   flattens every layer before the compositor sees it.
+- Only the `gtk.css` COSMIC generates is followed; a hand-written one is left
+  alone, and its colours reach a window once, when it opens.
 
 ## Licence
 

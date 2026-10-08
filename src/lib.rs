@@ -101,17 +101,20 @@ impl Session {
         if self.watching {
             return;
         }
-        let directories = cosmic::watched_directories();
+        let directories = cosmic::watched_directories(self.toolkit.config_dir());
         let borrowed: Vec<&std::path::Path> = directories.iter().map(AsRef::as_ref).collect();
         self.watching = watch::directories(&borrowed, on_appearance_changed);
     }
 
     fn compose_stylesheet(&self, frosted: bool) -> Option<CString> {
         let glass = if frosted { self.glass } else { None };
-        let mut css = read_env_file("COSMIC_GTK_APPEARANCE_CSS").unwrap_or_else(|| {
-            self.toolkit
-                .stylesheet(glass.as_ref(), self.decorations.as_ref())
-        });
+        let mut css = cosmic::palette(self.toolkit.config_dir()).unwrap_or_default();
+        css.push_str(
+            &read_env_file("COSMIC_GTK_APPEARANCE_CSS").unwrap_or_else(|| {
+                self.toolkit
+                    .stylesheet(glass.as_ref(), self.decorations.as_ref())
+            }),
+        );
         if let Some(extra) = read_env_file("COSMIC_GTK_APPEARANCE_CSS_EXTRA") {
             css.push('\n');
             css.push_str(&extra);
@@ -203,14 +206,19 @@ unsafe fn start_session() -> Option<()> {
     let decorations = appearance.as_ref().map(|found| found.decorations);
     let glass = resolve_glass(appearance.as_ref());
     log!(
-        "toolkit {}, map signal {map_signal}, COSMIC theme {}, frosted glass {}",
+        "toolkit {}, map signal {map_signal}, COSMIC theme {}, frosted glass {}, palette {}",
         toolkit.name(),
         if appearance.is_some() {
             "loaded"
         } else {
             "not found, falling back to GTK colours"
         },
-        if glass.is_some() { "on" } else { "off" }
+        if glass.is_some() { "on" } else { "off" },
+        if cosmic::palette(toolkit.config_dir()).is_some() {
+            "followed"
+        } else {
+            "left to GTK"
+        }
     );
 
     let add_emission_hook = gtk.signal_add_emission_hook;

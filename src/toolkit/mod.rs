@@ -39,6 +39,13 @@ impl Toolkit {
         }
     }
 
+    pub fn config_dir(&self) -> &'static str {
+        match self {
+            Toolkit::Gtk3(_) => "gtk-3.0",
+            Toolkit::Gtk4(_) => "gtk-4.0",
+        }
+    }
+
     pub unsafe fn is_decorated_toplevel(&self, window: *mut c_void) -> bool {
         match self {
             Toolkit::Gtk3(s) => (s.window_get_window_type)(window) == TOPLEVEL_WINDOW,
