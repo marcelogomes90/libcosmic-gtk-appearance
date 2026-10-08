@@ -33,7 +33,7 @@ pub unsafe fn pin_in_memory(anchor: *const c_void) -> bool {
         symbol_name: ptr::null(),
         symbol_address: ptr::null_mut(),
     };
-    if dladdr(anchor, &mut info) == 0 || info.path.is_null() {
+    if dladdr(anchor, &raw mut info) == 0 || info.path.is_null() {
         return false;
     }
     !dlopen(info.path, RTLD_NOW | RTLD_NODELETE).is_null()

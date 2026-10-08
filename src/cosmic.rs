@@ -150,10 +150,10 @@ mod tests {
     on_disabled: "#BEBEBEA6",
 )"##;
 
-    const CORNER_RADII: &str = r##"(
+    const CORNER_RADII: &str = r"(
     radius_0: (0.0, 0.0, 0.0, 0.0),
     radius_s: (2.0, 2.0, 2.0, 2.0),
-)"##;
+)";
 
     #[test]
     fn converts_hex_with_alpha_to_css() {

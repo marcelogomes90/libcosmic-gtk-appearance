@@ -308,7 +308,7 @@ mod tests {
     #[test]
     fn popups_are_excluded_from_the_glass() {
         let sheet = gtk3(Some(&glass()), None);
-        for rule in sheet.split("}") {
+        for rule in sheet.split('}') {
             if rule.contains("alpha(@window_bg_color") {
                 assert!(rule.contains(":not(.popup)"));
             }

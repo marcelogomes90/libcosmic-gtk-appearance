@@ -112,10 +112,8 @@ unsafe fn describe_protocol() -> Protocol {
         events: ptr::null(),
     });
 
-    let get_effect_types: &'static [*const Interface; 2] = leak([
-        effect as *const Interface,
-        ptr::addr_of!(wl_surface_interface),
-    ]);
+    let get_effect_types: &'static [*const Interface; 2] =
+        leak([ptr::from_ref(effect), ptr::addr_of!(wl_surface_interface)]);
     let manager_methods: &'static [Message; 2] = leak([
         Message {
             name: c"destroy".as_ptr(),
@@ -186,7 +184,7 @@ extern "C" fn on_global(
         if wanted.is_null() || CStr::from_ptr(interface) != CStr::from_ptr((*wanted).name) {
             return;
         }
-        let version = version.min((*wanted).version as u32);
+        let version = version.min(u32::try_from((*wanted).version).unwrap_or(1));
         let manager = wl_proxy_marshal_flags(
             registry,
             REGISTRY_BIND,
@@ -245,7 +243,7 @@ impl BlurManager {
         wl_proxy_add_listener(
             registry,
             protocol.registry_listener.as_ptr(),
-            protocol.bind_target as *const BindTarget as *mut c_void,
+            ptr::from_ref(protocol.bind_target).cast_mut().cast(),
         );
 
         wl_display_roundtrip_queue(display, queue);

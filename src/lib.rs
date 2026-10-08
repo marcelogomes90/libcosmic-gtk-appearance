@@ -128,7 +128,7 @@ struct WindowBlur {
 
 extern "C" fn release_window_blur(data: *mut c_void) {
     if !data.is_null() {
-        unsafe { drop(Box::from_raw(data as *mut WindowBlur)) }
+        unsafe { drop(Box::from_raw(data.cast::<WindowBlur>())) }
     }
 }
 
@@ -333,7 +333,7 @@ impl Session {
         }
 
         let mut stored =
-            (self.gtk.object_get_data)(surface, WINDOW_DATA_KEY.as_ptr()) as *mut WindowBlur;
+            (self.gtk.object_get_data)(surface, WINDOW_DATA_KEY.as_ptr()).cast::<WindowBlur>();
         if stored.is_null() {
             stored = Box::into_raw(Box::new(WindowBlur {
                 effect: None,
