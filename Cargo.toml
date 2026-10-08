@@ -1,0 +1,15 @@
+[package]
+name = "libcosmic-gtk-appearance"
+version = "0.1.0"
+edition = "2021"
+description = "LD_PRELOAD shim that makes GTK3 and GTK4 windows follow the COSMIC desktop appearance settings"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "cosmic_gtk_appearance"
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
