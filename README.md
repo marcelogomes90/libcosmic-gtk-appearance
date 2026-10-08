@@ -31,43 +31,55 @@ would without it.
 ## Installing
 
 ```sh
-make
-sudo make install     # /usr/lib/<multiarch>/gio/modules
-make deb              # builds a .deb
+just setup
 ```
 
-That is the whole setup for applications on the system. The library installs as
-a GIO module, every GTK application scans that directory on startup, and it
-applies itself from there. No environment variable, no desktop file to edit.
-Applications pick it up the next time they start.
+That builds the library and does the three things it takes to cover everything:
+installs it system-wide for native applications, puts a second copy where
+sandboxes can reach it, and grants that copy to the flatpaks you have installed.
+The system step asks for sudo; the rest runs as you.
 
-To remove it, `sudo make uninstall` or just delete the file; nothing else points
-at it and nothing needs undoing.
-
-### Flatpaks
-
-Sandboxed applications have their own `/usr` and never see the system copy, so
-they need a second one and a grant:
+The library installs as a GIO module, and every GTK application scans that
+directory on startup, so there is nothing to configure afterwards. Applications
+pick it up the next time they start.
 
 ```sh
-make install-user      # ~/.local/lib/gio/modules
-make flatpak-enable    # grants it to the installed flatpaks
+just uninstall
 ```
 
-`make flatpak-disable` removes those grants again. Both work per application
-rather than globally, which is what keeps the undo exact: `flatpak override
---reset <id>` deletes that application's override file outright, while a global
-`--reset` would clear the whole global override, and on a COSMIC install that
-already carries the grants delivering the GTK theme to sandboxes.
+Removes all three, and the uninstall is exact: nothing is left pointing at a file
+that no longer exists.
 
-Applications that already have an override of their own are left untouched in
-both directions, and reported, since adding to those would mean the undo could
-not tell our entries from theirs.
+The steps are also available on their own, and all of them can be repeated
+safely:
 
-Mind the quoting if you write the command yourself: in zsh, `"$VAR:ro"` is read
-as the `:r` history modifier and silently mangles the path, leaving the grant
-pointing at a directory that does not exist. Quote the variable and leave `:ro`
-outside it.
+| recipe | does |
+| --- | --- |
+| `just install` | `/usr/lib/<multiarch>/gio/modules`, for native applications |
+| `just install-user` | `~/.local/lib/gio/modules`, the copy flatpaks can reach |
+| `just flatpak-enable` | grants that copy to the installed flatpaks |
+| `just flatpak-disable` | takes the grants back |
+| `just check` | rustfmt, clippy and the tests |
+| `just deb` | builds a package |
+
+### About the flatpak grants
+
+Sandboxed applications have their own `/usr` and never see the system copy,
+which is why they need the second one plus a filesystem grant and
+`GIO_EXTRA_MODULES`. That is the same shape COSMIC already uses to hand its GTK
+colours to sandboxes: the theme arrives only because the global override grants
+`xdg-config/gtk-4.0`, and the file vanishes from the sandbox the moment that
+grant is denied.
+
+The grants are written per application rather than globally, which is what makes
+taking them back exact: `flatpak override --reset <id>` deletes that
+application's override outright, while a global `--reset` would clear the whole
+global override, and on a COSMIC install that is where the GTK theme grants
+live.
+
+An application that already carries an override of its own is left untouched in
+both directions and reported, since adding ours there would leave the undo
+unable to tell the two apart.
 
 ## Settings
 
