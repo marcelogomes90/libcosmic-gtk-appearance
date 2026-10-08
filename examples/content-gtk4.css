@@ -1,10 +1,16 @@
-/* GTK4 / libadwaita: also let the blur through text views.
-   The default stylesheet already clears list, grid and scroll surfaces but
-   keeps text solid, the way cosmic-edit does. This drops that exception.
+/* GTK4 / libadwaita: let the blur through the content area too.
+   By default only the window background is made translucent, so an
+   application that paints its own content stays solid. This clears those
+   surfaces, which is also what makes the header bar glassy in applications
+   whose content extends underneath it, such as gnome-font-viewer.
    Load it with COSMIC_GTK_APPEARANCE_CSS_EXTRA. */
 
-.view, scrolledwindow, viewport, listview, gridview, columnview,
-textview, textview > text, flowbox, .content-pane, stackpage {
+.view, scrolledwindow, viewport, listview, gridview, columnview, flowbox,
+stackpage, .content-pane {
+  background-color: transparent;
+}
+
+textview, textview > text {
   background-color: transparent;
 }
 

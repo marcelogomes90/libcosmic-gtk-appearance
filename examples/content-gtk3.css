@@ -1,6 +1,8 @@
-/* GTK3: also let the blur through text views.
-   The default stylesheet already clears list, grid and scroll surfaces but
-   keeps text solid, the way cosmic-edit does. This drops that exception.
+/* GTK3: let the blur through the content area too.
+   By default only the window background is made translucent, so an
+   application that paints its own content stays solid. This clears those
+   surfaces, which is also what makes the header bar glassy in applications
+   whose content extends underneath it, such as gnome-font-viewer.
    Load it with COSMIC_GTK_APPEARANCE_CSS_EXTRA. */
 
 .view, scrolledwindow, viewport, treeview.view, textview, textview text,
@@ -8,7 +10,7 @@ iconview, list, notebook > stack {
   background-color: transparent;
 }
 
-menubar, .menubar, toolbar, .toolbar, .primary-toolbar {
+toolbar, .toolbar, .primary-toolbar {
   background-color: transparent;
   background-image: none;
   box-shadow: none;

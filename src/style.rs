@@ -44,11 +44,6 @@ pub fn gtk4(glass: Option<&Glass>, decorations: Option<&Decorations>) -> String 
   background-color: alpha(@sidebar_bg_color, {sidebar});
 }}
 
-.view, scrolledwindow, viewport, listview, gridview, columnview, flowbox,
-stackpage, .content-pane {{
-  background-color: transparent;
-}}
-
 textview, textview > text {{
   background-color: @view_bg_color;
 }}
@@ -173,11 +168,6 @@ messagedialog.background:not(.popup) {{
 
 .sidebar, placessidebar, placessidebar list {{
   background-color: alpha(@sidebar_bg_color, {sidebar});
-}}
-
-.view, scrolledwindow, viewport, treeview.view, iconview, list,
-notebook > stack {{
-  background-color: transparent;
 }}
 
 textview, textview text {{
