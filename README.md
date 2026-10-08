@@ -79,12 +79,13 @@ views.
 
 ## Limits
 
-- Applications that delegate to a service are out of reach: `gnome-terminal`'s
-  window belongs to a D-Bus activated server that does not inherit the preload.
-- So are those that load GTK through `dlopen` after start, Firefox among them.
+- Applications that only hand a request to a background service are out of
+  reach: the window belongs to a process that never inherited the preload.
+- So are those that load GTK through `dlopen` after startup, since the library
+  looks for GTK as the process begins.
 - Popovers, menus and tooltips are separate surfaces and stay opaque on purpose.
-- An application painting its own opaque background still wins; GTK flattens
-  every layer before the compositor sees it.
+- An application painting its own opaque background still wins, because GTK
+  flattens every layer before the compositor sees it.
 
 ## Licence
 
