@@ -179,8 +179,10 @@ would make the shim believe it is always on.
 `transparent_background.base` — the ready-made colour libcosmic uses for windows
 (`#1A1B26C2`, i.e. 0.76). The `alpha_map` entry for the same level gives 0.79;
 using it would leave GTK windows out of step with COSMIC ones. The sidebar
-equivalent is `transparent_primary.base`, which is fully opaque: COSMIC frosts
-the window background and keeps containers solid.
+equivalent is `transparent_primary.base`. Do not read that token's alpha as a
+statement about containers: it is fully opaque, yet `cosmic-files` is visibly
+glassy right through its icon grid, so libcosmic clearly does not take the
+content background from there.
 
 **`frosted_maximized_apps` usually comes as `false`**: COSMIC does not frost a
 maximized window. That can be honoured without tracking any state, because both

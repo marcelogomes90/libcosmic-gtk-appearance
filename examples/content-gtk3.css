@@ -1,5 +1,7 @@
-/* GTK3: let the blur show through the content area too.
-   Load it with COSMIC_GTK_APPEARANCE_CSS_EXTRA, which appends to the default sheet. */
+/* GTK3: also let the blur through text views.
+   The default stylesheet already clears list, grid and scroll surfaces but
+   keeps text solid, the way cosmic-edit does. This drops that exception.
+   Load it with COSMIC_GTK_APPEARANCE_CSS_EXTRA. */
 
 .view, scrolledwindow, viewport, treeview.view, textview, textview text,
 iconview, list, notebook > stack {

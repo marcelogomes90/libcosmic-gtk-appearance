@@ -1,7 +1,7 @@
-/* GTK4 / libadwaita: let the blur show through the content area too.
-   COSMIC itself keeps containers opaque and frosts only the window background,
-   so this is a deliberate departure from the system look.
-   Load it with COSMIC_GTK_APPEARANCE_CSS_EXTRA, which appends to the default sheet. */
+/* GTK4 / libadwaita: also let the blur through text views.
+   The default stylesheet already clears list, grid and scroll surfaces but
+   keeps text solid, the way cosmic-edit does. This drops that exception.
+   Load it with COSMIC_GTK_APPEARANCE_CSS_EXTRA. */
 
 .view, scrolledwindow, viewport, listview, gridview, columnview,
 textview, textview > text, flowbox, .content-pane, stackpage {
