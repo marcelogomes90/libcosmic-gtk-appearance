@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// Copyright (C) 2026 Marcelo
+
 use std::cell::UnsafeCell;
 use std::ffi::{c_char, c_int, c_void, CStr};
 use std::ptr;

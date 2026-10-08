@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: LGPL-3.0-or-later
+// Copyright (C) 2026 Marcelo
+
 use std::fmt;
 use std::path::PathBuf;
 

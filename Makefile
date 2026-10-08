@@ -33,6 +33,7 @@ install: build
 	install -D -m 0644 README.md $(DESTDIR)$(DOCDIR)/README.md
 	install -D -m 0644 TESTING.md $(DESTDIR)$(DOCDIR)/TESTING.md
 	install -D -m 0644 LICENSE $(DESTDIR)$(DOCDIR)/LICENSE
+	install -D -m 0644 LICENSE.GPL-3 $(DESTDIR)$(DOCDIR)/LICENSE.GPL-3
 	install -d -m 0755 $(DESTDIR)$(DATADIR)
 	install -d -m 0755 $(DESTDIR)$(DATADIR)/examples
 	install -m 0644 examples/*.css $(DESTDIR)$(DATADIR)/examples/

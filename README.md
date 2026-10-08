@@ -218,3 +218,10 @@ toolkits put a `maximized` class on the window node — `window.maximized` on GT
   from the surface's finalize handler because the `wl_display` may already be
   gone by then; swapping surfaces across a hide/show cycle destroys the previous
   one normally.
+
+## Licence
+
+LGPL-3.0-or-later. This library is preloaded into the address space of other
+programs, including proprietary ones; the LGPL keeps the copyleft on this code
+without reaching into whatever it ends up loaded next to. `LICENSE` holds the
+LGPL-3 text, which incorporates by reference the GPL-3 in `LICENSE.GPL-3`.
