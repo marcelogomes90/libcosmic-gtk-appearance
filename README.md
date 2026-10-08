@@ -32,35 +32,54 @@ would without it.
 
 ```sh
 make
-sudo make install     # /usr/lib/<multiarch>
-make install-user     # ~/.local/lib
+sudo make install     # /usr/lib/<multiarch>/gio/modules
 make deb              # builds a .deb
 ```
 
-Both locations matter. Applications confined by AppArmor, such as `evince`, only
-load libraries from `/usr/lib`. Flatpaks are the opposite: `/usr` is reserved by
-Flatpak and cannot be shared into a sandbox, so they need the copy in
-`~/.local/lib`.
+That is the whole setup for applications on the system. The library installs as
+a GIO module, every GTK application scans that directory on startup, and it
+applies itself from there. No environment variable, no desktop file to edit.
+Applications pick it up the next time they start.
 
-Installing does not enable anything. Pick what suits you:
+To remove it, `sudo make uninstall` or just delete the file; nothing else points
+at it and nothing needs undoing.
+
+### Flatpaks
+
+Sandboxed applications have their own `/usr` and never see the system copy, so
+they need a second one and a grant:
 
 ```sh
-# one application: copy its .desktop to ~/.local/share/applications/
-# and prefix the Exec line
-Exec=env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libcosmic_gtk_appearance.so baobab
+make install-user     # ~/.local/lib/gio/modules
 
-# every flatpak at once
 flatpak override --user \
-  --filesystem=~/.local/lib/libcosmic_gtk_appearance.so:ro \
+  --filesystem="$HOME/.local/lib/gio/modules":ro \
   --filesystem=xdg-config/cosmic:ro \
-  --env=LD_PRELOAD=$HOME/.local/lib/libcosmic_gtk_appearance.so
-
-# the whole session: one line in /etc/environment
-LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libcosmic_gtk_appearance.so
+  --env=GIO_EXTRA_MODULES="$HOME/.local/lib/gio/modules" \
+  com.example.App
 ```
 
-The session-wide option injects the library into every process; it costs one
-`dlsym` where there is no glib, but it is the most invasive choice.
+Mind the quoting: in zsh, `"$VAR:ro"` is read as the `:r` history modifier and
+silently mangles the path, leaving the grant pointing at a directory that does
+not exist. Quote the variable and leave `:ro` outside, as above.
+
+Naming an application confines the override to it, which also makes it reversible
+in one step:
+
+```sh
+flatpak override --user --reset com.example.App
+```
+
+That deletes the application's override file outright. Run `--reset` **without**
+an application id and it clears the global override instead, taking with it
+whatever else lives there — on a COSMIC install that already holds the grants
+for GTK themes and colour schemes. Note too that resetting an application that
+already had an override of its own discards those settings along with these.
+
+Applying the override globally works as well, but then only the blunt `--reset`
+undoes it, and the selective flags are worse than they look: `--nofilesystem`
+and `--unset-env` do not remove an entry, they append a negation that actively
+denies the path from then on.
 
 ## Settings
 
