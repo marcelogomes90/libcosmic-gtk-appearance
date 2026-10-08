@@ -140,23 +140,10 @@ extern "C" fn on_library_loaded() {
     let _ = catch_unwind(|| unsafe { schedule_start() });
 }
 
-type ModuleEntry = extern "C" fn(*mut c_void);
+type StartupEntry = unsafe fn();
 
 #[no_mangle]
-pub extern "C" fn g_io_module_load(_module: *mut c_void) {
-    let _ = catch_unwind(|| unsafe {
-        if !ffi::has_symbol(c"gtk_native_get_surface") && !ffi::has_symbol(c"gtk_widget_get_window")
-        {
-            return;
-        }
-        let anchor = g_io_module_load as ModuleEntry as *const c_void;
-        if !ffi::pin_in_memory(anchor) {
-            log!("could not pin the module in memory, giving up");
-            return;
-        }
-        schedule_start();
-    });
-}
+pub extern "C" fn g_io_module_load(_module: *mut c_void) {}
 
 #[no_mangle]
 pub extern "C" fn g_io_module_unload(_module: *mut c_void) {}
@@ -176,6 +163,10 @@ unsafe fn schedule_start() {
     let Some(address) = ffi::symbol(c"g_idle_add") else {
         return;
     };
+    if !ffi::pin_in_memory(schedule_start as StartupEntry as *const c_void) {
+        log!("could not pin the library in memory, giving up");
+        return;
+    }
     let idle_add: extern "C" fn(SourceFunc, *mut c_void) -> c_uint = std::mem::transmute(address);
     idle_add(start, ptr::null_mut());
 }
