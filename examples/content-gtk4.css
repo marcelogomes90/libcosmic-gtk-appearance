@@ -1,0 +1,13 @@
+/* GTK4 / libadwaita: let the blur show through the content area too.
+   COSMIC itself keeps containers opaque and frosts only the window background,
+   so this is a deliberate departure from the system look.
+   Load it with COSMIC_GTK_APPEARANCE_CSS_EXTRA, which appends to the default sheet. */
+
+.view, scrolledwindow, viewport, listview, gridview, columnview,
+textview, textview > text, flowbox, .content-pane, stackpage {
+  background-color: transparent;
+}
+
+row.activatable:hover, .card {
+  background-color: alpha(@card_bg_color, 0.55);
+}
