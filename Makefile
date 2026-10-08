@@ -16,7 +16,8 @@ USER_DATADIR ?= $(HOME)/.local/share/$(NAME)
 CARGO   ?= cargo
 DEBROOT := target/deb/$(NAME)
 
-.PHONY: all build check install install-user uninstall uninstall-user deb clean
+.PHONY: all build check install install-user uninstall uninstall-user
+.PHONY: flatpak-enable flatpak-disable deb clean
 
 all: build
 
@@ -52,6 +53,12 @@ install-user: build
 uninstall:
 	rm -f $(DESTDIR)$(LIBDIR)/$(LIB)
 	rm -rf $(DESTDIR)$(DOCDIR) $(DESTDIR)$(DATADIR)
+
+flatpak-enable:
+	tools/flatpak.sh enable $(USER_LIBDIR)
+
+flatpak-disable:
+	tools/flatpak.sh disable $(USER_LIBDIR)
 
 uninstall-user:
 	rm -f $(USER_LIBDIR)/$(LIB)

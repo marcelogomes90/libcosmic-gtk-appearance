@@ -50,36 +50,24 @@ Sandboxed applications have their own `/usr` and never see the system copy, so
 they need a second one and a grant:
 
 ```sh
-make install-user     # ~/.local/lib/gio/modules
-
-flatpak override --user \
-  --filesystem="$HOME/.local/lib/gio/modules":ro \
-  --filesystem=xdg-config/cosmic:ro \
-  --env=GIO_EXTRA_MODULES="$HOME/.local/lib/gio/modules" \
-  com.example.App
+make install-user      # ~/.local/lib/gio/modules
+make flatpak-enable    # grants it to the installed flatpaks
 ```
 
-Mind the quoting: in zsh, `"$VAR:ro"` is read as the `:r` history modifier and
-silently mangles the path, leaving the grant pointing at a directory that does
-not exist. Quote the variable and leave `:ro` outside, as above.
+`make flatpak-disable` removes those grants again. Both work per application
+rather than globally, which is what keeps the undo exact: `flatpak override
+--reset <id>` deletes that application's override file outright, while a global
+`--reset` would clear the whole global override, and on a COSMIC install that
+already carries the grants delivering the GTK theme to sandboxes.
 
-Naming an application confines the override to it, which also makes it reversible
-in one step:
+Applications that already have an override of their own are left untouched in
+both directions, and reported, since adding to those would mean the undo could
+not tell our entries from theirs.
 
-```sh
-flatpak override --user --reset com.example.App
-```
-
-That deletes the application's override file outright. Run `--reset` **without**
-an application id and it clears the global override instead, taking with it
-whatever else lives there — on a COSMIC install that already holds the grants
-for GTK themes and colour schemes. Note too that resetting an application that
-already had an override of its own discards those settings along with these.
-
-Applying the override globally works as well, but then only the blunt `--reset`
-undoes it, and the selective flags are worse than they look: `--nofilesystem`
-and `--unset-env` do not remove an entry, they append a negation that actively
-denies the path from then on.
+Mind the quoting if you write the command yourself: in zsh, `"$VAR:ro"` is read
+as the `:r` history modifier and silently mangles the path, leaving the grant
+pointing at a directory that does not exist. Quote the variable and leave `:ro`
+outside it.
 
 ## Settings
 
