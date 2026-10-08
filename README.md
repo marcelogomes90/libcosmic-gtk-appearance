@@ -37,9 +37,11 @@ make deb                    # target/deb/libcosmic-gtk-appearance_<version>_<arc
 make check                  # rustfmt, clippy and the unit tests
 ```
 
-Prefer the system path. Applications confined by AppArmor — `evince` among them —
-refuse to map a preloaded library from a user directory, so `install-user` leaves
-those out.
+Both paths earn their keep. Applications confined by AppArmor — `evince` among
+them — only map shared objects from `/lib` and `/usr/lib`, so they need the
+system copy. Flatpaks need the opposite: `/usr` is reserved by Flatpak and can
+never be shared into a sandbox, so for those the library has to sit somewhere
+grantable such as `~/.local/lib`. Run both targets if you want both.
 
 Installing does not enable anything. Pick one of these:
 
@@ -47,11 +49,12 @@ Installing does not enable anything. Pick one of these:
 # one app: copy its .desktop into ~/.local/share/applications/ and prefix Exec
 Exec=env LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libcosmic_gtk_appearance.so baobab
 
-# flatpaks, once for all of them
+# flatpaks, once for all of them: they cannot reach /usr, so use the user copy
+make install-user
 flatpak override --user \
-  --filesystem=/usr/lib/x86_64-linux-gnu/libcosmic_gtk_appearance.so:ro \
+  --filesystem=~/.local/lib/libcosmic_gtk_appearance.so:ro \
   --filesystem=xdg-config/cosmic:ro \
-  --env=LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libcosmic_gtk_appearance.so
+  --env=LD_PRELOAD=$HOME/.local/lib/libcosmic_gtk_appearance.so
 
 # the whole session: one line in /etc/environment
 LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libcosmic_gtk_appearance.so
@@ -154,6 +157,14 @@ controls, but a `GtkMenuButton`'s icon sits outside the reach of `headerbar
 button image` and keeps inheriting the header bar's colour. The colour goes on
 the buttons and travels down by inheritance, with labels reset to
 `@headerbar_fg_color` so the text does not turn into the accent colour too.
+
+**Flatpak refuses to share anything under `/usr`.** It answers
+`the path "/usr" is reserved by Flatpak` and the mount is skipped, so a
+`--filesystem` grant for a library installed system-wide silently does nothing
+and the sandboxed app starts without it. Sandboxed applications need the copy
+under `~/.local/lib` instead. Note also that an app holding the `host`
+permission, like ProtonPlus, sees the library without any grant at all, which
+makes it a poor test case for whether the grants are right.
 
 **Inside a flatpak, `XDG_CONFIG_HOME` points at the app's private config**
 (`~/.var/app/<id>/config`), not at yours. Reading the theme from there always

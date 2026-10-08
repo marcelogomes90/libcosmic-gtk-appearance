@@ -59,9 +59,15 @@ textview, textview > text {{
         ));
         if glass.opaque_when_maximized {
             sheet.push_str(
-                "window.maximized, window.csd.maximized,
-window.fullscreen, window.csd.fullscreen {
+                "window.background.maximized, window.csd.maximized,
+window.background.fullscreen, window.csd.fullscreen,
+dialog.background.maximized, dialog.background.fullscreen {
   background-color: @window_bg_color;
+}
+
+window.maximized headerbar, window.maximized .titlebar,
+window.fullscreen headerbar, window.fullscreen .titlebar {
+  background-color: @headerbar_bg_color;
 }
 
 window.maximized .sidebar-pane, window.maximized .navigation-sidebar,
@@ -180,11 +186,19 @@ textview, textview text {{
         ));
         if glass.opaque_when_maximized {
             sheet.push_str(
-                "window:not(.popup).maximized decoration,
-window:not(.popup).fullscreen decoration,
-dialog:not(.popup).maximized decoration,
-dialog:not(.popup).fullscreen decoration {
+                "window:not(.popup).maximized.background,
+window:not(.popup).fullscreen.background,
+dialog:not(.popup).maximized.background,
+dialog:not(.popup).fullscreen.background,
+window:not(.popup).maximized decoration,
+window:not(.popup).fullscreen decoration {
   background-color: @window_bg_color;
+}
+
+window:not(.popup).maximized headerbar, window:not(.popup).maximized .titlebar,
+window:not(.popup).fullscreen headerbar, window:not(.popup).fullscreen .titlebar,
+dialog:not(.popup).maximized headerbar, dialog:not(.popup).maximized .titlebar {
+  background-color: @headerbar_bg_color;
 }
 
 .maximized .sidebar, .maximized placessidebar,
@@ -258,4 +272,63 @@ headerbar label:backdrop, headerbar button label:backdrop, .titlebar label:backd
 "
     ));
     sheet
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn glass() -> Glass {
+        Glass {
+            window_opacity: 0.76,
+            sidebar_opacity: 1.0,
+            opaque_when_maximized: true,
+        }
+    }
+
+    #[test]
+    fn without_glass_no_surface_is_made_translucent() {
+        for sheet in [gtk3(None, None), gtk4(None, None)] {
+            assert!(!sheet.contains("alpha(@window_bg_color"));
+            assert!(!sheet.contains("background-color: transparent;\n}"));
+        }
+    }
+
+    #[test]
+    fn with_glass_the_window_background_is_tinted() {
+        assert!(gtk3(Some(&glass()), None).contains("alpha(@window_bg_color, 0.76)"));
+        assert!(gtk4(Some(&glass()), None).contains("alpha(@window_bg_color, 0.76)"));
+    }
+
+    #[test]
+    fn gtk3_tints_the_decoration_node_not_the_window() {
+        let sheet = gtk3(Some(&glass()), None);
+        assert!(sheet.contains("window:not(.popup) decoration"));
+        assert!(sheet.contains("dialog:not(.popup) decoration"));
+    }
+
+    #[test]
+    fn popups_are_excluded_from_the_glass() {
+        let sheet = gtk3(Some(&glass()), None);
+        for rule in sheet.split("}") {
+            if rule.contains("alpha(@window_bg_color") {
+                assert!(rule.contains(":not(.popup)"));
+            }
+        }
+    }
+
+    #[test]
+    fn maximized_override_reaches_the_title_bar() {
+        for sheet in [gtk3(Some(&glass()), None), gtk4(Some(&glass()), None)] {
+            assert!(sheet.contains(".maximized headerbar"));
+            assert!(sheet.contains(".maximized .titlebar"));
+        }
+    }
+
+    #[test]
+    fn text_views_stay_solid() {
+        for sheet in [gtk3(Some(&glass()), None), gtk4(Some(&glass()), None)] {
+            assert!(sheet.contains("background-color: @view_bg_color;"));
+        }
+    }
 }
