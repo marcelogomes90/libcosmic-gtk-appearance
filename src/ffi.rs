@@ -9,8 +9,34 @@ pub type GType = usize;
 pub type GBoolean = i32;
 pub type GQuark = u32;
 
+#[repr(C)]
+struct SharedObjectInfo {
+    path: *const c_char,
+    base: *mut c_void,
+    symbol_name: *const c_char,
+    symbol_address: *mut c_void,
+}
+
+const RTLD_NOW: i32 = 0x2;
+const RTLD_NODELETE: i32 = 0x1000;
+
 extern "C" {
     fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+    fn dlopen(path: *const c_char, flags: i32) -> *mut c_void;
+    fn dladdr(address: *const c_void, info: *mut SharedObjectInfo) -> i32;
+}
+
+pub unsafe fn pin_in_memory(anchor: *const c_void) -> bool {
+    let mut info = SharedObjectInfo {
+        path: ptr::null(),
+        base: ptr::null_mut(),
+        symbol_name: ptr::null(),
+        symbol_address: ptr::null_mut(),
+    };
+    if dladdr(anchor, &mut info) == 0 || info.path.is_null() {
+        return false;
+    }
+    !dlopen(info.path, RTLD_NOW | RTLD_NODELETE).is_null()
 }
 
 pub unsafe fn symbol(name: &CStr) -> Option<*mut c_void> {

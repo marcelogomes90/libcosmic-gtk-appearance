@@ -9,7 +9,7 @@ mod toolkit;
 mod wayland;
 
 use std::cell::UnsafeCell;
-use std::ffi::{c_uint, c_void, CStr, CString};
+use std::ffi::{c_char, c_uint, c_void, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
 use std::sync::OnceLock;
@@ -138,6 +138,32 @@ static INITIALIZER: extern "C" fn() = on_library_loaded;
 
 extern "C" fn on_library_loaded() {
     let _ = catch_unwind(|| unsafe { schedule_start() });
+}
+
+type ModuleEntry = extern "C" fn(*mut c_void);
+
+#[no_mangle]
+pub extern "C" fn g_io_module_load(_module: *mut c_void) {
+    let _ = catch_unwind(|| unsafe {
+        if !ffi::has_symbol(c"gtk_native_get_surface") && !ffi::has_symbol(c"gtk_widget_get_window")
+        {
+            return;
+        }
+        let anchor = g_io_module_load as ModuleEntry as *const c_void;
+        if !ffi::pin_in_memory(anchor) {
+            log!("could not pin the module in memory, giving up");
+            return;
+        }
+        schedule_start();
+    });
+}
+
+#[no_mangle]
+pub extern "C" fn g_io_module_unload(_module: *mut c_void) {}
+
+#[no_mangle]
+pub extern "C" fn g_io_module_query() -> *mut *mut c_char {
+    ptr::null_mut()
 }
 
 unsafe fn schedule_start() {

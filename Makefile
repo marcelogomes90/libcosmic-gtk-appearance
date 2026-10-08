@@ -6,11 +6,11 @@ DEB_ARCH  ?= $(shell dpkg-architecture -qDEB_HOST_ARCH 2>/dev/null || echo amd64
 MAINTAINER ?= Marcelo <marcelo.sobrinho@outlook.com>
 
 PREFIX  ?= /usr
-LIBDIR  ?= $(PREFIX)/lib/$(MULTIARCH)
+LIBDIR  ?= $(PREFIX)/lib/$(MULTIARCH)/gio/modules
 DOCDIR  ?= $(PREFIX)/share/doc/$(NAME)
 DATADIR ?= $(PREFIX)/share/$(NAME)
 
-USER_LIBDIR  ?= $(HOME)/.local/lib
+USER_LIBDIR  ?= $(HOME)/.local/lib/gio/modules
 USER_DATADIR ?= $(HOME)/.local/share/$(NAME)
 
 CARGO   ?= cargo
@@ -38,7 +38,7 @@ install: build
 	install -m 0644 examples/*.css $(DESTDIR)$(DATADIR)/examples/
 	@echo
 	@echo "Installed $(LIBDIR)/$(LIB)"
-	@echo "Nothing is enabled yet; see $(DOCDIR)/README.md for how to turn it on."
+	@echo "GTK applications pick it up on their next start. Nothing else to do."
 
 install-user: build
 	install -D -m 0644 target/release/$(LIB) $(USER_LIBDIR)/$(LIB)
@@ -47,8 +47,7 @@ install-user: build
 	install -m 0644 examples/*.css $(USER_DATADIR)/examples/
 	@echo
 	@echo "Installed $(USER_LIBDIR)/$(LIB)"
-	@echo "AppArmor-confined apps such as evince will not load it from here;"
-	@echo "those need 'sudo make install'."
+	@echo "This copy is for flatpaks; point GIO_EXTRA_MODULES at the directory."
 
 uninstall:
 	rm -f $(DESTDIR)$(LIBDIR)/$(LIB)
