@@ -53,6 +53,10 @@ textview, textview > text {{
   background-color: @view_bg_color;
 }}
 
+popovermenubar, popovermenubar:backdrop {{
+  background-color: @window_bg_color;
+}}
+
 ",
             window = glass.window_opacity,
             sidebar = glass.sidebar_opacity
@@ -178,6 +182,10 @@ notebook > stack {{
 
 textview, textview text {{
   background-color: @view_bg_color;
+}}
+
+menubar, menubar:backdrop, .menubar, .menubar:backdrop {{
+  background-color: @window_bg_color;
 }}
 
 ",
