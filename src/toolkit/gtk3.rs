@@ -3,13 +3,11 @@
 
 use std::ffi::{c_char, c_int, c_uint, c_void};
 
-use crate::ffi::{resolve, GBoolean, GType};
+use crate::ffi::{resolve, GBoolean, Library};
 
 pub struct Symbols {
-    pub wayland_window_get_type: extern "C" fn() -> GType,
     pub widget_get_window: extern "C" fn(*mut c_void) -> *mut c_void,
     pub window_get_window_type: extern "C" fn(*mut c_void) -> c_int,
-    pub wayland_window_get_wl_surface: extern "C" fn(*mut c_void) -> *mut c_void,
     pub window_get_display: extern "C" fn(*mut c_void) -> *mut c_void,
     pub window_get_screen: extern "C" fn(*mut c_void) -> *mut c_void,
     pub css_provider_load_from_data:
@@ -18,16 +16,17 @@ pub struct Symbols {
 }
 
 impl Symbols {
-    pub unsafe fn load() -> Option<Self> {
+    pub unsafe fn load(library: &Library) -> Option<Self> {
         Some(Self {
-            wayland_window_get_type: resolve!(c"gdk_wayland_window_get_type"),
-            widget_get_window: resolve!(c"gtk_widget_get_window"),
-            window_get_window_type: resolve!(c"gtk_window_get_window_type"),
-            wayland_window_get_wl_surface: resolve!(c"gdk_wayland_window_get_wl_surface"),
-            window_get_display: resolve!(c"gdk_window_get_display"),
-            window_get_screen: resolve!(c"gdk_window_get_screen"),
-            css_provider_load_from_data: resolve!(c"gtk_css_provider_load_from_data"),
-            add_provider_for_screen: resolve!(c"gtk_style_context_add_provider_for_screen"),
+            widget_get_window: resolve!(library, c"gtk_widget_get_window"),
+            window_get_window_type: resolve!(library, c"gtk_window_get_window_type"),
+            window_get_display: resolve!(library, c"gdk_window_get_display"),
+            window_get_screen: resolve!(library, c"gdk_window_get_screen"),
+            css_provider_load_from_data: resolve!(library, c"gtk_css_provider_load_from_data"),
+            add_provider_for_screen: resolve!(
+                library,
+                c"gtk_style_context_add_provider_for_screen"
+            ),
         })
     }
 }

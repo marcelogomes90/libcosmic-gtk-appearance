@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // Copyright (C) 2026 Marcelo
 
+use std::fmt::Write;
+
 use crate::cosmic::{Decorations, Glass};
 
 struct Tokens {
@@ -32,19 +34,43 @@ impl Tokens {
     }
 }
 
-pub fn gtk4(glass: Option<&Glass>, decorations: Option<&Decorations>) -> String {
+fn labels(sheet: &mut String, backdrop_icon: &str) {
+    let _ = write!(
+        sheet,
+        "headerbar label, headerbar button label, .titlebar label {{
+  color: @headerbar_fg_color;
+}}
+
+headerbar label:backdrop, headerbar button label:backdrop, .titlebar label:backdrop {{
+  color: {backdrop_icon};
+}}
+"
+    );
+}
+
+pub fn gtk4(
+    glass: Option<&Glass>,
+    decorations: Option<&Decorations>,
+    native_background_effect: bool,
+) -> String {
     let mut sheet = String::new();
     if let Some(glass) = glass {
-        sheet.push_str(&format!(
+        let backdrop = if native_background_effect {
+            "\n  backdrop-filter: blur(32px);"
+        } else {
+            ""
+        };
+        let _ = write!(
+            sheet,
             "window.background, window.csd, dialog.background {{
-  background-color: alpha(@window_bg_color, {window});
+  background-color: alpha(@window_bg_color, {window});{backdrop}
 }}
 
 .sidebar-pane, .navigation-sidebar, .sidebar {{
   background-color: alpha(@sidebar_bg_color, {sidebar});
 }}
 
-textview, textview > text {{
+textview, textview > text, picture {{
   background-color: @view_bg_color;
 }}
 
@@ -55,7 +81,7 @@ popovermenubar, popovermenubar:backdrop {{
 ",
             window = glass.window_opacity,
             sidebar = glass.sidebar_opacity
-        ));
+        );
         if glass.opaque_when_maximized {
             sheet.push_str(
                 "window.background.maximized, window.csd.maximized,
@@ -88,7 +114,8 @@ window.fullscreen .navigation-sidebar, window.fullscreen .sidebar {
         radius,
     } = Tokens::resolve(decorations);
 
-    sheet.push_str(&format!(
+    let _ = write!(
+        sheet,
         "headerbar, headerbar:backdrop, headerbar > windowhandle, windowhandle, .titlebar,
 toolbarview > .top-bar, toolbarview > .top-bar.raised,
 toolbarview > .bottom-bar, toolbarview > .bottom-bar.raised {{
@@ -140,22 +167,17 @@ headerbar button:backdrop image, headerbar button image:backdrop {{
   color: {backdrop_icon};
 }}
 
-headerbar label, headerbar button label, .titlebar label {{
-  color: @headerbar_fg_color;
-}}
-
-headerbar label:backdrop, headerbar button label:backdrop, .titlebar label:backdrop {{
-  color: {backdrop_icon};
-}}
 "
-    ));
+    );
+    labels(&mut sheet, &backdrop_icon);
     sheet
 }
 
 pub fn gtk3(glass: Option<&Glass>, decorations: Option<&Decorations>) -> String {
     let mut sheet = String::new();
     if let Some(glass) = glass {
-        sheet.push_str(&format!(
+        let _ = write!(
+            sheet,
             "window:not(.popup) decoration, dialog:not(.popup) decoration,
 messagedialog:not(.popup) decoration {{
   background-color: alpha(@window_bg_color, {window});
@@ -181,7 +203,7 @@ menubar, menubar:backdrop, .menubar, .menubar:backdrop {{
 ",
             window = glass.window_opacity,
             sidebar = glass.sidebar_opacity
-        ));
+        );
         if glass.opaque_when_maximized {
             sheet.push_str(
                 "window:not(.popup).maximized.background,
@@ -217,7 +239,8 @@ dialog:not(.popup).maximized headerbar, dialog:not(.popup).maximized .titlebar {
         radius,
     } = Tokens::resolve(decorations);
 
-    sheet.push_str(&format!(
+    let _ = write!(
+        sheet,
         "headerbar, headerbar:backdrop, .titlebar, .header-bar {{
   background: none;
   background-color: transparent;
@@ -260,15 +283,9 @@ headerbar button:backdrop image, .titlebar button:backdrop image {{
   color: {backdrop_icon};
 }}
 
-headerbar label, headerbar button label, .titlebar label {{
-  color: @headerbar_fg_color;
-}}
-
-headerbar label:backdrop, headerbar button label:backdrop, .titlebar label:backdrop {{
-  color: {backdrop_icon};
-}}
 "
-    ));
+    );
+    labels(&mut sheet, &backdrop_icon);
     sheet
 }
 
@@ -286,7 +303,7 @@ mod tests {
 
     #[test]
     fn without_glass_no_surface_is_made_translucent() {
-        for sheet in [gtk3(None, None), gtk4(None, None)] {
+        for sheet in [gtk3(None, None), gtk4(None, None, false)] {
             assert!(!sheet.contains("alpha(@window_bg_color"));
             assert!(!sheet.contains("background-color: transparent;\n}"));
         }
@@ -295,7 +312,7 @@ mod tests {
     #[test]
     fn with_glass_the_window_background_is_tinted() {
         assert!(gtk3(Some(&glass()), None).contains("alpha(@window_bg_color, 0.76)"));
-        assert!(gtk4(Some(&glass()), None).contains("alpha(@window_bg_color, 0.76)"));
+        assert!(gtk4(Some(&glass()), None, false).contains("alpha(@window_bg_color, 0.76)"));
     }
 
     #[test]
@@ -317,16 +334,40 @@ mod tests {
 
     #[test]
     fn maximized_override_reaches_the_title_bar() {
-        for sheet in [gtk3(Some(&glass()), None), gtk4(Some(&glass()), None)] {
+        for sheet in [
+            gtk3(Some(&glass()), None),
+            gtk4(Some(&glass()), None, false),
+        ] {
             assert!(sheet.contains(".maximized headerbar"));
             assert!(sheet.contains(".maximized .titlebar"));
         }
     }
 
     #[test]
+    fn pictures_stay_solid_so_the_desktop_does_not_show_through_them() {
+        assert!(gtk4(Some(&glass()), None, false).contains("picture"));
+        assert!(!gtk4(None, None, false).contains("picture"));
+    }
+
+    #[test]
     fn text_views_stay_solid() {
-        for sheet in [gtk3(Some(&glass()), None), gtk4(Some(&glass()), None)] {
+        for sheet in [
+            gtk3(Some(&glass()), None),
+            gtk4(Some(&glass()), None, false),
+        ] {
             assert!(sheet.contains("background-color: @view_bg_color;"));
         }
+    }
+
+    #[test]
+    fn a_gtk_that_speaks_the_protocol_is_asked_through_css() {
+        let native = gtk4(Some(&glass()), None, true);
+        assert!(native.contains("backdrop-filter: blur("));
+        assert!(!gtk4(Some(&glass()), None, false).contains("backdrop-filter"));
+    }
+
+    #[test]
+    fn no_glass_means_no_backdrop_filter() {
+        assert!(!gtk4(None, None, true).contains("backdrop-filter"));
     }
 }

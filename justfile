@@ -9,7 +9,7 @@ prefix       := env('PREFIX', '/usr')
 libdir       := prefix / 'lib' / multiarch / 'gio/modules'
 docdir       := prefix / 'share/doc' / name
 datadir      := prefix / 'share' / name
-user_libdir  := home_directory() / '.local/lib/gio/modules'
+user_libdir  := home_directory() / '.local/lib' / name
 user_datadir := home_directory() / '.local/share' / name
 debroot      := 'target/deb' / name
 
@@ -25,7 +25,7 @@ check:
     cargo clippy --release --all-targets -- -D warnings
     cargo test --release --locked
 
-# Install for native applications, for flatpaks, and grant it to them
+# Install for native applications and for every flatpak
 setup: install install-user flatpak-enable
 
 [private]
@@ -43,15 +43,16 @@ install: build (stage '' 'sudo')
 
 # Install the copy flatpaks can reach
 install-user: build
+    rm -f {{home_directory()}}/.local/lib/gio/modules/{{lib}}
     install -D -m 0644 target/release/{{lib}} {{user_libdir}}/{{lib}}
     install -d -m 0755 {{user_datadir}}/examples
     install -m 0644 examples/*.css {{user_datadir}}/examples/
 
-# Grant the user copy to the installed flatpaks
+# Grant the user copy to every flatpak, present and future
 flatpak-enable:
     tools/flatpak.sh enable {{user_libdir}}
 
-# Take those grants back
+# Take that grant back
 flatpak-disable:
     tools/flatpak.sh disable {{user_libdir}}
 
@@ -65,8 +66,8 @@ uninstall-system:
 
 [private]
 uninstall-user:
-    rm -f {{user_libdir}}/{{lib}}
-    rm -rf {{user_datadir}}
+    rm -f {{user_libdir}}/{{lib}} {{home_directory()}}/.local/lib/gio/modules/{{lib}}
+    rm -rf {{user_libdir}} {{user_datadir}}
 
 # Build a .deb
 deb: build (stage debroot)

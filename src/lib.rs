@@ -16,9 +16,9 @@ use std::ptr;
 use std::sync::OnceLock;
 
 use cosmic::{Appearance, Decorations, Glass};
-use ffi::GBoolean;
-use gtk::{Gtk, SourceFunc};
-use toolkit::Toolkit;
+use ffi::{GBoolean, Library};
+use gtk::Gtk;
+use toolkit::{Toolkit, Wayland};
 use wayland::{BlurEffect, BlurManager};
 
 macro_rules! log {
@@ -43,84 +43,22 @@ const KEEP_EMISSION_HOOK: GBoolean = 1;
 const BLUR_EXTENT: i32 = 32767;
 
 struct Session {
+    library: Library,
     gtk: Gtk,
     toolkit: Toolkit,
+    wayland: Option<Wayland>,
+    searched_for_wayland: bool,
     compositor: *mut c_void,
     blur: Option<BlurManager>,
+    searched_for_blur: bool,
     decorations: Option<Decorations>,
     glass: Option<Glass>,
+    styling: bool,
     provider: *mut c_void,
-    searched_for_blur: bool,
-    stylesheet_installed: bool,
+    css: Option<CString>,
+    frosted: bool,
+    stale: bool,
     watching: bool,
-}
-
-impl Session {
-    unsafe fn connect_blur(&mut self, display: *mut c_void) -> Option<()> {
-        if !self.searched_for_blur {
-            self.searched_for_blur = true;
-            let wl_display = (self.gtk.wayland_display_get_wl_display)(display);
-            let compositor = (self.gtk.wayland_display_get_wl_compositor)(display);
-            if wl_display.is_null() || compositor.is_null() {
-                log!("no wl_display or wl_compositor");
-                return None;
-            }
-            self.compositor = compositor;
-            self.blur = BlurManager::bind(wl_display);
-        }
-        self.blur.as_ref().map(|_| ())
-    }
-
-    unsafe fn install_stylesheet(
-        &mut self,
-        surface: *mut c_void,
-        display: *mut c_void,
-        frosted: bool,
-    ) {
-        if self.stylesheet_installed {
-            return;
-        }
-        self.stylesheet_installed = true;
-        if std::env::var_os("COSMIC_GTK_APPEARANCE_NO_CSS").is_some() {
-            return;
-        }
-        let Some(css) = self.compose_stylesheet(frosted) else {
-            return;
-        };
-        self.provider = self
-            .toolkit
-            .add_stylesheet(&self.gtk, surface, display, &css);
-        log!(
-            "stylesheet applied ({}, frosted glass {})",
-            self.toolkit.name(),
-            if frosted { "on" } else { "off" }
-        );
-    }
-
-    unsafe fn start_watching(&mut self) {
-        if self.watching {
-            return;
-        }
-        let directories = cosmic::watched_directories(self.toolkit.config_dir());
-        let borrowed: Vec<&std::path::Path> = directories.iter().map(AsRef::as_ref).collect();
-        self.watching = watch::directories(&borrowed, on_appearance_changed);
-    }
-
-    fn compose_stylesheet(&self, frosted: bool) -> Option<CString> {
-        let glass = if frosted { self.glass } else { None };
-        let mut css = cosmic::palette(self.toolkit.config_dir()).unwrap_or_default();
-        css.push_str(
-            &read_env_file("COSMIC_GTK_APPEARANCE_CSS").unwrap_or_else(|| {
-                self.toolkit
-                    .stylesheet(glass.as_ref(), self.decorations.as_ref())
-            }),
-        );
-        if let Some(extra) = read_env_file("COSMIC_GTK_APPEARANCE_CSS_EXTRA") {
-            css.push('\n');
-            css.push_str(&extra);
-        }
-        CString::new(css).ok()
-    }
 }
 
 struct SessionCell(UnsafeCell<Option<Session>>);
@@ -156,8 +94,6 @@ extern "C" fn on_library_loaded() {
     let _ = catch_unwind(|| unsafe { schedule_start() });
 }
 
-type StartupEntry = unsafe fn();
-
 #[no_mangle]
 pub extern "C" fn g_io_module_load(_module: *mut c_void) {}
 
@@ -169,22 +105,27 @@ pub extern "C" fn g_io_module_query() -> *mut *mut c_char {
     ptr::null_mut()
 }
 
-unsafe fn schedule_start() {
-    if std::env::var_os("COSMIC_GTK_APPEARANCE_DISABLE").is_some() {
-        return;
+unsafe fn resident_toolkit() -> Option<(Library, &'static CStr)> {
+    toolkit::SONAMES
+        .into_iter()
+        .find_map(|soname| Library::resident(soname).map(|library| (library, soname)))
+}
+
+unsafe fn schedule_start() -> Option<()> {
+    let disabled = std::env::var_os("COSMIC_GTK_APPEARANCE_DISABLE").is_some();
+    let on_wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
+    if disabled || !on_wayland {
+        return None;
     }
-    if std::env::var_os("WAYLAND_DISPLAY").is_none() {
-        return;
-    }
-    let Some(address) = ffi::symbol(c"g_idle_add") else {
-        return;
-    };
-    if !ffi::pin_in_memory(schedule_start as StartupEntry as *const c_void) {
+    let glib = Library::resident(c"libglib-2.0.so.0").unwrap_or_else(Library::global);
+    let idle_add: extern "C" fn(gtk::SourceFunc, *mut c_void) -> c_uint =
+        glib.symbol(c"g_idle_add")?;
+    if !ffi::pin_in_memory(on_library_loaded as *const c_void) {
         log!("could not pin the library in memory, giving up");
-        return;
+        return None;
     }
-    let idle_add: extern "C" fn(SourceFunc, *mut c_void) -> c_uint = std::mem::transmute(address);
     idle_add(start, ptr::null_mut());
+    Some(())
 }
 
 extern "C" fn start(_data: *mut c_void) -> GBoolean {
@@ -199,14 +140,16 @@ unsafe fn start_session() -> Option<()> {
         return Some(());
     }
 
-    let gtk = Gtk::load()?;
-    let toolkit = Toolkit::detect()?;
-    let map_signal = gtk.widget_signal(c"map")?;
+    let Some((library, soname)) = resident_toolkit() else {
+        log!("no GTK in this process, nothing to do");
+        return None;
+    };
+    let gtk = Gtk::load(&library)?;
+    let toolkit = Toolkit::load(&library, soname)?;
     let appearance = Appearance::from_config();
-    let decorations = appearance.as_ref().map(|found| found.decorations);
     let glass = resolve_glass(appearance.as_ref());
     log!(
-        "toolkit {}, map signal {map_signal}, COSMIC theme {}, frosted glass {}, palette {}",
+        "toolkit {}, COSMIC theme {}, frosted glass {}, palette {}",
         toolkit.name(),
         if appearance.is_some() {
             "loaded"
@@ -221,40 +164,34 @@ unsafe fn start_session() -> Option<()> {
         }
     );
 
-    let add_emission_hook = gtk.signal_add_emission_hook;
-    let list_toplevels = gtk.window_list_toplevels;
-    let list_free = gtk.list_free;
-
     *SESSION.0.get() = Some(Session {
+        library,
         gtk,
         toolkit,
+        wayland: None,
+        searched_for_wayland: false,
         compositor: ptr::null_mut(),
         blur: None,
-        decorations,
-        glass,
-        provider: ptr::null_mut(),
         searched_for_blur: false,
-        stylesheet_installed: false,
+        decorations: appearance.as_ref().map(|found| found.decorations),
+        glass,
+        styling: std::env::var_os("COSMIC_GTK_APPEARANCE_NO_CSS").is_none(),
+        provider: ptr::null_mut(),
+        css: None,
+        frosted: false,
+        stale: true,
         watching: false,
     });
 
-    add_emission_hook(
-        map_signal,
+    let session = session_ref()?;
+    (session.gtk.signal_add_emission_hook)(
+        session.gtk.map_signal,
         0,
         on_window_mapped,
         ptr::null_mut(),
         ptr::null(),
     );
-
-    let toplevels = list_toplevels();
-    let mut node = toplevels;
-    while !node.is_null() {
-        defer_apply((*node).data);
-        node = (*node).next;
-    }
-    if !toplevels.is_null() {
-        list_free(toplevels);
-    }
+    each_toplevel(session, |window| defer_apply(session, window));
     Some(())
 }
 
@@ -275,159 +212,252 @@ extern "C" fn on_window_mapped(
         if instance.is_null() || !session.gtk.is_window(instance) {
             return;
         }
-        defer_apply(instance);
+        defer_apply(session, instance);
     }));
     KEEP_EMISSION_HOOK
 }
 
-unsafe fn defer_apply(window: *mut c_void) {
+unsafe fn each_toplevel(session: &Session, mut visit: impl FnMut(*mut c_void)) {
+    let toplevels = (session.gtk.window_list_toplevels)();
+    let mut node = toplevels;
+    while !node.is_null() {
+        visit((*node).data);
+        node = (*node).next;
+    }
+    if !toplevels.is_null() {
+        (session.gtk.list_free)(toplevels);
+    }
+}
+
+unsafe fn defer_apply(session: &Session, window: *mut c_void) {
     if window.is_null() {
         return;
     }
-    let Some(session) = session_ref() else {
-        return;
-    };
     (session.gtk.object_ref)(window);
     (session.gtk.idle_add)(apply_to_window, window);
 }
 
 extern "C" fn apply_to_window(window: *mut c_void) -> GBoolean {
     let _ = catch_unwind(AssertUnwindSafe(|| unsafe {
-        attach_blur(window);
-        if let Some(session) = session_ref() {
+        if let Some(session) = session_mut() {
+            session.apply(window);
             (session.gtk.object_unref)(window);
         }
     }));
     SOURCE_REMOVE
 }
 
-unsafe fn attach_blur(window: *mut c_void) -> Option<()> {
-    let session = session_mut()?;
-    if !session.gtk.is_mapped(window) {
-        return None;
-    }
-
-    if !session.toolkit.is_decorated_toplevel(window) {
-        log!("skipping popup window {window:p}");
-        return None;
-    }
-
-    let surface = session.toolkit.surface_of(window);
-    if surface.is_null() {
-        return None;
-    }
-    if !session.toolkit.is_wayland(&session.gtk, surface) {
-        log!("surface does not come from the wayland backend");
-        return None;
-    }
-
-    let wl_surface = session.toolkit.wl_surface_of(surface);
-    let display = session.toolkit.display_of(surface);
-    if wl_surface.is_null() || display.is_null() {
-        return None;
-    }
-
-    let frosted =
-        session.glass.is_some() && session.ensure_blur(window, surface, wl_surface, display);
-    session.install_stylesheet(surface, display, frosted);
-    session.start_watching();
-    Some(())
-}
-
 impl Session {
-    unsafe fn ensure_blur(
-        &mut self,
-        window: *mut c_void,
-        surface: *mut c_void,
-        wl_surface: *mut c_void,
-        display: *mut c_void,
-    ) -> bool {
-        if self.connect_blur(display).is_none() {
-            return false;
+    unsafe fn apply(&mut self, window: *mut c_void) -> Option<()> {
+        if !self.gtk.is_mapped(window) {
+            return None;
         }
-        let Some(manager) = self.blur.as_ref() else {
+        if !self.toolkit.is_decorated_toplevel(window) {
+            log!("skipping popup window {window:p}");
+            return None;
+        }
+        let surface = self.toolkit.surface_of(window);
+        if surface.is_null() {
+            return None;
+        }
+
+        let frosted = self.attach_blur(window, surface);
+        self.refresh_stylesheet(surface, frosted);
+        self.start_watching();
+        Some(())
+    }
+
+    unsafe fn attach_blur(&mut self, window: *mut c_void, surface: *mut c_void) -> bool {
+        if !self.searched_for_wayland {
+            self.searched_for_wayland = true;
+            self.wayland = Wayland::load(&self.library, &self.toolkit);
+            if self.wayland.is_none() {
+                log!("this GTK build has no wayland backend");
+            }
+        }
+        let Some(wayland) = self.wayland.as_ref() else {
             return false;
         };
-        if !manager.supports_blur() {
-            log!(
-                "compositor lacks the blur capability (caps=0x{:x})",
-                manager.capabilities()
-            );
+        let wl_surface = wayland.wl_surface_of(&self.gtk, surface);
+        if wl_surface.is_null() {
+            log!("surface does not come from the wayland backend");
             return false;
         }
-
-        let mut stored =
-            (self.gtk.object_get_data)(surface, WINDOW_DATA_KEY.as_ptr()).cast::<WindowBlur>();
-        if stored.is_null() {
-            stored = Box::into_raw(Box::new(WindowBlur {
-                effect: None,
-                wl_surface: ptr::null_mut(),
-            }));
-            (self.gtk.object_set_data_full)(
-                surface,
-                WINDOW_DATA_KEY.as_ptr(),
-                stored.cast(),
-                release_window_blur as *const c_void,
-            );
+        if self.glass.is_none() {
+            self.detach_blur(surface);
+            return false;
         }
-        let record = &mut *stored;
-
-        if record.wl_surface != wl_surface {
-            if let Some(stale) = record.effect.take() {
-                stale.destroy();
-            }
-            let Some(manager) = self.blur.as_ref() else {
-                return false;
-            };
-            let Some(effect) = manager.effect_for(wl_surface) else {
-                log!("get_background_effect failed");
-                return false;
-            };
-            effect.set_region(self.compositor, BLUR_EXTENT);
-            record.effect = Some(effect);
-            record.wl_surface = wl_surface;
-            (self.gtk.widget_queue_draw)(window);
-            log!("blur attached to window {window:p}");
+        let display = self.toolkit.display_of(surface);
+        if display.is_null() {
+            return false;
         }
+        if !self.connect_blur(display) {
+            return false;
+        }
+        if self.toolkit.native_background_effect() {
+            return true;
+        }
+
+        let record = self.window_blur(surface);
+        if (*record).wl_surface == wl_surface {
+            return true;
+        }
+        (*record).effect = None;
+        (*record).wl_surface = ptr::null_mut();
+
+        let Some(effect) = self.blur.as_ref().and_then(|m| m.effect_for(wl_surface)) else {
+            log!("get_background_effect failed");
+            return false;
+        };
+        effect.set_region(self.compositor, BLUR_EXTENT);
+        (*record).effect = Some(effect);
+        (*record).wl_surface = wl_surface;
+        (self.gtk.widget_queue_draw)(window);
+        log!("blur attached to window {window:p}");
         true
+    }
+
+    unsafe fn connect_blur(&mut self, display: *mut c_void) -> bool {
+        if !self.searched_for_blur {
+            self.searched_for_blur = true;
+            let Some(wayland) = self.wayland.as_ref() else {
+                return false;
+            };
+            let wl_display = (wayland.display_get_wl_display)(display);
+            let compositor = (wayland.display_get_wl_compositor)(display);
+            if wl_display.is_null() || compositor.is_null() {
+                log!("no wl_display or wl_compositor");
+            } else {
+                self.compositor = compositor;
+                self.blur = BlurManager::bind(wl_display);
+            }
+        }
+        match self.blur.as_ref() {
+            None => false,
+            Some(manager) if !manager.supports_blur() => {
+                log!(
+                    "compositor lacks the blur capability (caps=0x{:x})",
+                    manager.capabilities()
+                );
+                false
+            }
+            Some(_) => true,
+        }
+    }
+
+    unsafe fn detach_blur(&self, surface: *mut c_void) {
+        let stored = self.stored_blur(surface);
+        if let Some(record) = stored.as_mut() {
+            if record.effect.take().is_some() {
+                record.wl_surface = ptr::null_mut();
+                log!("blur released, frosted glass is off");
+            }
+        }
+    }
+
+    unsafe fn stored_blur(&self, surface: *mut c_void) -> *mut WindowBlur {
+        (self.gtk.object_get_data)(surface, WINDOW_DATA_KEY.as_ptr()).cast::<WindowBlur>()
+    }
+
+    unsafe fn window_blur(&self, surface: *mut c_void) -> *mut WindowBlur {
+        let stored = self.stored_blur(surface);
+        if !stored.is_null() {
+            return stored;
+        }
+        let fresh = Box::into_raw(Box::new(WindowBlur {
+            effect: None,
+            wl_surface: ptr::null_mut(),
+        }));
+        (self.gtk.object_set_data_full)(
+            surface,
+            WINDOW_DATA_KEY.as_ptr(),
+            fresh.cast(),
+            release_window_blur as *const c_void,
+        );
+        fresh
+    }
+
+    unsafe fn refresh_stylesheet(&mut self, surface: *mut c_void, frosted: bool) {
+        if !self.styling {
+            return;
+        }
+        if !self.stale && !self.provider.is_null() && self.frosted == frosted {
+            return;
+        }
+        self.frosted = frosted;
+        self.stale = false;
+        let Some(css) = self.compose_stylesheet(frosted) else {
+            return;
+        };
+        if self.css.as_deref() == Some(css.as_c_str()) {
+            return;
+        }
+        if self.provider.is_null() {
+            self.provider = self.toolkit.add_stylesheet(&self.gtk, surface, &css);
+            if self.provider.is_null() {
+                return;
+            }
+        } else {
+            self.toolkit.load_stylesheet(self.provider, &css);
+        }
+        self.css = Some(css);
+        log!(
+            "stylesheet applied ({}, frosted glass {})",
+            self.toolkit.name(),
+            if frosted { "on" } else { "off" }
+        );
+    }
+
+    fn compose_stylesheet(&self, frosted: bool) -> Option<CString> {
+        let glass = if frosted { self.glass } else { None };
+        let mut css = cosmic::palette(self.toolkit.config_dir()).unwrap_or_default();
+        css.push_str(
+            &read_env_file("COSMIC_GTK_APPEARANCE_CSS").unwrap_or_else(|| {
+                self.toolkit
+                    .stylesheet(glass.as_ref(), self.decorations.as_ref())
+            }),
+        );
+        if let Some(extra) = read_env_file("COSMIC_GTK_APPEARANCE_CSS_EXTRA") {
+            css.push('\n');
+            css.push_str(&extra);
+        }
+        CString::new(css).ok()
+    }
+
+    unsafe fn start_watching(&mut self) {
+        if self.watching {
+            return;
+        }
+        let directories = cosmic::watched_directories(self.toolkit.config_dir());
+        let borrowed: Vec<&std::path::Path> = directories.iter().map(AsRef::as_ref).collect();
+        self.watching = watch::directories(
+            &borrowed,
+            self.gtk.unix_fd_add_full,
+            self.gtk.timeout_add,
+            on_appearance_changed,
+        );
     }
 }
 
 fn on_appearance_changed() {
     let _ = catch_unwind(AssertUnwindSafe(|| unsafe {
-        let Some(session) = session_mut() else {
+        {
+            let Some(session) = session_mut() else {
+                return;
+            };
+            let appearance = Appearance::from_config();
+            session.decorations = appearance.as_ref().map(|found| found.decorations);
+            session.glass = resolve_glass(appearance.as_ref());
+            session.stale = true;
+            log!(
+                "appearance changed, frosted glass {}",
+                if session.glass.is_some() { "on" } else { "off" }
+            );
+        }
+        let Some(session) = session_ref() else {
             return;
         };
-        let appearance = Appearance::from_config();
-        session.decorations = appearance.as_ref().map(|found| found.decorations);
-        session.glass = resolve_glass(appearance.as_ref());
-
-        let frosted = session.glass.is_some()
-            && session
-                .blur
-                .as_ref()
-                .is_some_and(BlurManager::supports_blur);
-        log!(
-            "appearance changed, frosted glass {}",
-            if frosted { "on" } else { "off" }
-        );
-        if !session.provider.is_null() {
-            if let Some(css) = session.compose_stylesheet(frosted) {
-                session.toolkit.load_stylesheet(session.provider, &css);
-            }
-        }
-
-        let list_toplevels = session.gtk.window_list_toplevels;
-        let list_free = session.gtk.list_free;
-        let toplevels = list_toplevels();
-        let mut node = toplevels;
-        while !node.is_null() {
-            defer_apply((*node).data);
-            node = (*node).next;
-        }
-        if !toplevels.is_null() {
-            list_free(toplevels);
-        }
+        each_toplevel(session, |window| defer_apply(session, window));
     }));
 }
 

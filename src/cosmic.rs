@@ -15,19 +15,18 @@ pub struct Rgba {
 impl Rgba {
     fn parse(text: &str) -> Option<Self> {
         let hex = text.trim().trim_matches('"').trim_start_matches('#');
-        if hex.len() != 8 {
+        if hex.len() != 6 && hex.len() != 8 {
             return None;
         }
+        let channel = |at: usize| u8::from_str_radix(hex.get(at..at + 2)?, 16).ok();
         Some(Self {
-            red: u8::from_str_radix(&hex[0..2], 16).ok()?,
-            green: u8::from_str_radix(&hex[2..4], 16).ok()?,
-            blue: u8::from_str_radix(&hex[4..6], 16).ok()?,
-            alpha: u8::from_str_radix(&hex[6..8], 16).ok()?,
+            red: channel(0)?,
+            green: channel(2)?,
+            blue: channel(4)?,
+            alpha: channel(6).unwrap_or(u8::MAX),
         })
     }
-}
 
-impl Rgba {
     pub fn opacity(self) -> f64 {
         f64::from(self.alpha) / 255.0
     }
@@ -41,7 +40,7 @@ impl fmt::Display for Rgba {
             self.red,
             self.green,
             self.blue,
-            f64::from(self.alpha) / 255.0
+            self.opacity()
         )
     }
 }

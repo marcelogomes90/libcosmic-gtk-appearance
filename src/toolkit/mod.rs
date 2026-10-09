@@ -8,7 +8,7 @@ use std::ffi::{c_int, c_void, CStr};
 use std::ptr;
 
 use crate::cosmic::{Decorations, Glass};
-use crate::ffi::has_symbol;
+use crate::ffi::{resolve, GType, Library};
 use crate::gtk::Gtk;
 use crate::style;
 
@@ -16,20 +16,20 @@ const TOPLEVEL_WINDOW: c_int = 0;
 const USER_PRIORITY: u32 = 800;
 const OVERRIDE_PRIORITY: u32 = USER_PRIORITY + 1;
 
+pub const SONAMES: [&CStr; 2] = [c"libgtk-4.so.1", c"libgtk-3.so.0"];
+
 pub enum Toolkit {
     Gtk3(gtk3::Symbols),
     Gtk4(gtk4::Symbols),
 }
 
 impl Toolkit {
-    pub unsafe fn detect() -> Option<Self> {
-        if has_symbol(c"gtk_native_get_surface") {
-            return gtk4::Symbols::load().map(Toolkit::Gtk4);
+    pub unsafe fn load(library: &Library, soname: &CStr) -> Option<Self> {
+        if soname == SONAMES[0] {
+            gtk4::Symbols::load(library).map(Toolkit::Gtk4)
+        } else {
+            gtk3::Symbols::load(library).map(Toolkit::Gtk3)
         }
-        if has_symbol(c"gtk_widget_get_window") {
-            return gtk3::Symbols::load().map(Toolkit::Gtk3);
-        }
-        None
     }
 
     pub fn name(&self) -> &'static str {
@@ -60,21 +60,6 @@ impl Toolkit {
         }
     }
 
-    pub unsafe fn is_wayland(&self, gtk: &Gtk, surface: *mut c_void) -> bool {
-        let wayland = match self {
-            Toolkit::Gtk3(s) => (s.wayland_window_get_type)(),
-            Toolkit::Gtk4(s) => (s.wayland_surface_get_type)(),
-        };
-        (gtk.type_check_instance_is_a)(surface, wayland) != 0
-    }
-
-    pub unsafe fn wl_surface_of(&self, surface: *mut c_void) -> *mut c_void {
-        match self {
-            Toolkit::Gtk3(s) => (s.wayland_window_get_wl_surface)(surface),
-            Toolkit::Gtk4(s) => (s.wayland_surface_get_wl_surface)(surface),
-        }
-    }
-
     pub unsafe fn display_of(&self, surface: *mut c_void) -> *mut c_void {
         match self {
             Toolkit::Gtk3(s) => (s.window_get_display)(surface),
@@ -95,7 +80,6 @@ impl Toolkit {
         &self,
         gtk: &Gtk,
         surface: *mut c_void,
-        display: *mut c_void,
         css: &CStr,
     ) -> *mut c_void {
         let provider = (gtk.css_provider_new)();
@@ -110,7 +94,12 @@ impl Toolkit {
                     (s.add_provider_for_screen)(screen, provider, OVERRIDE_PRIORITY);
                 }
             }
-            Toolkit::Gtk4(s) => (s.add_provider_for_display)(display, provider, OVERRIDE_PRIORITY),
+            Toolkit::Gtk4(s) => {
+                let display = (s.surface_get_display)(surface);
+                if !display.is_null() {
+                    (s.add_provider_for_display)(display, provider, OVERRIDE_PRIORITY);
+                }
+            }
         }
         provider
     }
@@ -118,7 +107,49 @@ impl Toolkit {
     pub fn stylesheet(&self, glass: Option<&Glass>, decorations: Option<&Decorations>) -> String {
         match self {
             Toolkit::Gtk3(_) => style::gtk3(glass, decorations),
-            Toolkit::Gtk4(_) => style::gtk4(glass, decorations),
+            Toolkit::Gtk4(s) => style::gtk4(glass, decorations, s.native_background_effect),
         }
+    }
+
+    pub fn native_background_effect(&self) -> bool {
+        match self {
+            Toolkit::Gtk3(_) => false,
+            Toolkit::Gtk4(s) => s.native_background_effect,
+        }
+    }
+}
+
+pub struct Wayland {
+    surface_get_type: extern "C" fn() -> GType,
+    surface_get_wl_surface: extern "C" fn(*mut c_void) -> *mut c_void,
+    pub display_get_wl_display: extern "C" fn(*mut c_void) -> *mut c_void,
+    pub display_get_wl_compositor: extern "C" fn(*mut c_void) -> *mut c_void,
+}
+
+impl Wayland {
+    pub unsafe fn load(library: &Library, toolkit: &Toolkit) -> Option<Self> {
+        let (get_type, get_wl_surface) = match toolkit {
+            Toolkit::Gtk3(_) => (
+                c"gdk_wayland_window_get_type",
+                c"gdk_wayland_window_get_wl_surface",
+            ),
+            Toolkit::Gtk4(_) => (
+                c"gdk_wayland_surface_get_type",
+                c"gdk_wayland_surface_get_wl_surface",
+            ),
+        };
+        Some(Self {
+            surface_get_type: resolve!(library, get_type),
+            surface_get_wl_surface: resolve!(library, get_wl_surface),
+            display_get_wl_display: resolve!(library, c"gdk_wayland_display_get_wl_display"),
+            display_get_wl_compositor: resolve!(library, c"gdk_wayland_display_get_wl_compositor"),
+        })
+    }
+
+    pub unsafe fn wl_surface_of(&self, gtk: &Gtk, surface: *mut c_void) -> *mut c_void {
+        if (gtk.type_check_instance_is_a)(surface, (self.surface_get_type)()) == 0 {
+            return ptr::null_mut();
+        }
+        (self.surface_get_wl_surface)(surface)
     }
 }
