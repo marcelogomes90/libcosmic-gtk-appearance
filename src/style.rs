@@ -3,7 +3,15 @@
 
 use std::fmt::Write;
 
-use crate::cosmic::{Decorations, Glass};
+use crate::cosmic::{Decorations, Glass, Padding};
+
+const PLAIN_ICON: &str = concat!(
+    "button.image-button:not(.titlebutton):not(.suggested-action)",
+    ":not(.destructive-action):not(.opaque):not(.raised)"
+);
+const CONTROL_ICON: u16 = 16;
+const CONTROL_PADDING: u16 = 8;
+const HEADER_CONTENT: u16 = 32;
 
 struct Tokens {
     active_icon: String,
@@ -34,18 +42,32 @@ impl Tokens {
     }
 }
 
-fn labels(sheet: &mut String, backdrop_icon: &str) {
+fn title(sheet: &mut String, backdrop_icon: &str) {
     let _ = write!(
         sheet,
-        "headerbar label, headerbar button label, .titlebar label {{
+        "headerbar .title, headerbar .subtitle, .titlebar .title, .titlebar .subtitle {{
   color: @headerbar_fg_color;
 }}
 
-headerbar label:backdrop, headerbar button label:backdrop, .titlebar label:backdrop {{
+headerbar .title:backdrop, headerbar .subtitle:backdrop,
+.titlebar .title:backdrop, .titlebar .subtitle:backdrop {{
   color: {backdrop_icon};
 }}
 "
     );
+}
+
+fn control(padding: &Padding) -> (u16, String) {
+    let Padding {
+        top,
+        right,
+        bottom,
+        left,
+    } = *padding;
+    (
+        HEADER_CONTENT + top + bottom,
+        format!("{top}px {right}px {bottom}px {left}px"),
+    )
 }
 
 pub fn gtk4(
@@ -134,6 +156,10 @@ headerbar button.titlebutton, windowcontrols > button {{
   box-shadow: none;
   border: none;
   outline: none;
+  margin: 0;
+  padding: 0;
+  min-width: {chip}px;
+  min-height: {chip}px;
   transition: none;
 }}
 
@@ -142,7 +168,9 @@ windowcontrols > button > image {{
   background-image: none;
   box-shadow: none;
   border-radius: {radius};
-  padding: 5px;
+  min-width: {icon}px;
+  min-height: {icon}px;
+  padding: {inset}px;
   transition: none;
 }}
 
@@ -155,21 +183,62 @@ windowcontrols > button:checked > image {{
   background-color: {pressed};
 }}
 
-headerbar button, headerbar menubutton, headerbar menubutton > button,
-windowcontrols > button, windowcontrols > button > image, headerbar button image {{
+windowcontrols > button, windowcontrols > button > image {{
   color: {active_icon};
 }}
 
-headerbar button:backdrop, headerbar menubutton:backdrop,
-headerbar menubutton > button:backdrop, windowcontrols > button:backdrop,
-windowcontrols > button:backdrop > image, windowcontrols > button > image:backdrop,
-headerbar button:backdrop image, headerbar button image:backdrop {{
+windowcontrols > button:backdrop, windowcontrols > button:backdrop > image,
+windowcontrols > button > image:backdrop {{
   color: {backdrop_icon};
 }}
 
-"
+headerbar {plain}, .titlebar {plain} {{
+  color: {active_icon};
+}}
+
+headerbar {plain}:backdrop, .titlebar {plain}:backdrop {{
+  color: {backdrop_icon};
+}}
+
+",
+        plain = PLAIN_ICON,
+        chip = CONTROL_ICON + 2 * CONTROL_PADDING,
+        icon = CONTROL_ICON,
+        inset = CONTROL_PADDING,
     );
-    labels(&mut sheet, &backdrop_icon);
+
+    if let Some(theme) = decorations {
+        let (height, padding) = control(&theme.header);
+        let (maximized_height, maximized_padding) = control(&theme.header_maximized);
+        let _ = write!(
+            sheet,
+            "headerbar, .titlebar {{
+  min-height: {height}px;
+}}
+
+headerbar > windowhandle > box {{
+  padding: {padding};
+}}
+
+window.maximized headerbar, window.maximized .titlebar,
+window.fullscreen headerbar, window.fullscreen .titlebar {{
+  min-height: {maximized_height}px;
+}}
+
+window.maximized headerbar > windowhandle > box,
+window.fullscreen headerbar > windowhandle > box {{
+  padding: {maximized_padding};
+}}
+
+windowcontrols {{
+  border-spacing: {gap}px;
+}}
+
+",
+            gap = theme.gap
+        );
+    }
+    title(&mut sheet, &backdrop_icon);
     sheet
 }
 
@@ -258,7 +327,10 @@ headerbar button.titlebutton, .titlebar button.titlebutton {{
   border: none;
   outline: none;
   border-radius: {radius};
-  padding: 5px;
+  margin: 0;
+  min-width: {icon}px;
+  min-height: {icon}px;
+  padding: {inset}px;
   transition: none;
 }}
 
@@ -270,28 +342,83 @@ headerbar button.titlebutton:active, .titlebar button.titlebutton:active {{
   background-color: {pressed};
 }}
 
-headerbar button, headerbar menubutton, headerbar button.titlebutton,
-.titlebar button, .titlebar button.titlebutton,
-headerbar button image, .titlebar button image {{
+headerbar button.titlebutton, .titlebar button.titlebutton,
+headerbar button.titlebutton image, .titlebar button.titlebutton image {{
   color: {active_icon};
 }}
 
-headerbar button:backdrop, headerbar menubutton:backdrop,
-headerbar button.titlebutton:backdrop, .titlebar button:backdrop,
-.titlebar button.titlebutton:backdrop,
-headerbar button:backdrop image, .titlebar button:backdrop image {{
+headerbar button.titlebutton:backdrop, .titlebar button.titlebutton:backdrop,
+headerbar button.titlebutton:backdrop image,
+.titlebar button.titlebutton:backdrop image {{
   color: {backdrop_icon};
 }}
 
-"
+headerbar {plain}, .titlebar {plain},
+headerbar {plain} image, .titlebar {plain} image {{
+  color: {active_icon};
+}}
+
+headerbar {plain}:backdrop, .titlebar {plain}:backdrop,
+headerbar {plain}:backdrop image, .titlebar {plain}:backdrop image {{
+  color: {backdrop_icon};
+}}
+
+",
+        plain = PLAIN_ICON,
+        icon = CONTROL_ICON,
+        inset = CONTROL_PADDING,
     );
-    labels(&mut sheet, &backdrop_icon);
+
+    if let Some(theme) = decorations {
+        let (_, padding) = control(&theme.header);
+        let (_, maximized_padding) = control(&theme.header_maximized);
+        let _ = write!(
+            sheet,
+            "headerbar, .titlebar {{
+  min-height: {content}px;
+  padding: {padding};
+}}
+
+.maximized headerbar, .maximized .titlebar,
+.fullscreen headerbar, .fullscreen .titlebar {{
+  padding: {maximized_padding};
+}}
+
+",
+            content = HEADER_CONTENT
+        );
+    }
+    title(&mut sheet, &backdrop_icon);
     sheet
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cosmic::Rgba;
+
+    fn decorations() -> Decorations {
+        Decorations {
+            active_icon: Rgba::parse("#63D0DFFF").unwrap(),
+            backdrop_icon: Rgba::parse("#BEBEBEFF").unwrap(),
+            hover: Rgba::parse("#63636333").unwrap(),
+            pressed: Rgba::parse("#16161680").unwrap(),
+            radius: 160.0,
+            gap: 8,
+            header: Padding {
+                top: 7,
+                right: 7,
+                bottom: 8,
+                left: 7,
+            },
+            header_maximized: Padding {
+                top: 8,
+                right: 8,
+                bottom: 8,
+                left: 8,
+            },
+        }
+    }
 
     fn glass() -> Glass {
         Glass {
@@ -369,5 +496,65 @@ mod tests {
     #[test]
     fn no_glass_means_no_backdrop_filter() {
         assert!(!gtk4(None, None, true).contains("backdrop-filter"));
+    }
+
+    #[test]
+    fn the_accent_reaches_icons_and_never_a_filled_button() {
+        let theme = decorations();
+        let accent = theme.active_icon.to_string();
+        for sheet in [gtk3(None, Some(&theme)), gtk4(None, Some(&theme), false)] {
+            for rule in sheet.split('}').filter(|rule| rule.contains(&accent)) {
+                assert!(
+                    rule.contains("windowcontrols")
+                        || rule.contains("button.titlebutton")
+                        || rule.contains("button.image-button")
+                );
+                if rule.contains("image-button") {
+                    for filled in [
+                        ".suggested-action",
+                        ".destructive-action",
+                        ".opaque",
+                        ".raised",
+                    ] {
+                        assert!(rule.contains(&format!(":not({filled})")));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn an_icon_button_in_the_title_bar_takes_the_accent() {
+        let theme = decorations();
+        for sheet in [gtk3(None, Some(&theme)), gtk4(None, Some(&theme), false)] {
+            assert!(sheet.contains(&format!("headerbar {PLAIN_ICON},")));
+        }
+    }
+
+    #[test]
+    fn a_window_control_is_an_icon_inside_the_cosmic_radius() {
+        let theme = decorations();
+        for sheet in [gtk3(None, Some(&theme)), gtk4(None, Some(&theme), false)] {
+            assert!(sheet.contains("border-radius: 160px;"));
+            assert!(sheet.contains("padding: 8px;"));
+            assert!(sheet.contains("min-width: 16px;"));
+        }
+    }
+
+    #[test]
+    fn the_title_bar_takes_its_height_from_the_density() {
+        let sheet = gtk4(None, Some(&decorations()), false);
+        assert!(sheet.contains("min-height: 47px;"));
+        assert!(sheet.contains("padding: 7px 7px 8px 7px;"));
+        assert!(sheet.contains("min-height: 48px;"));
+        assert!(sheet.contains("padding: 8px 8px 8px 8px;"));
+        assert!(sheet.contains("border-spacing: 8px;"));
+    }
+
+    #[test]
+    fn without_a_cosmic_theme_the_metrics_are_left_alone() {
+        let sheet = gtk4(None, None, false);
+        assert!(!sheet.contains("border-spacing"));
+        assert!(!sheet.contains("headerbar > windowhandle > box"));
     }
 }

@@ -13,7 +13,7 @@ pub struct Rgba {
 }
 
 impl Rgba {
-    fn parse(text: &str) -> Option<Self> {
+    pub(crate) fn parse(text: &str) -> Option<Self> {
         let hex = text.trim().trim_matches('"').trim_start_matches('#');
         if hex.len() != 6 && hex.len() != 8 {
             return None;
@@ -53,12 +53,23 @@ pub struct Glass {
 }
 
 #[derive(Clone, Copy)]
+pub struct Padding {
+    pub top: u16,
+    pub right: u16,
+    pub bottom: u16,
+    pub left: u16,
+}
+
+#[derive(Clone, Copy)]
 pub struct Decorations {
     pub active_icon: Rgba,
     pub backdrop_icon: Rgba,
     pub hover: Rgba,
     pub pressed: Rgba,
     pub radius: f32,
+    pub gap: u16,
+    pub header: Padding,
+    pub header_maximized: Padding,
 }
 
 pub struct Appearance {
@@ -75,12 +86,27 @@ impl Appearance {
         let accent = read("accent")?;
         let corner_radii = read("corner_radii")?;
 
+        let compact = compact_header();
         let decorations = Decorations {
-            active_icon: Rgba::parse(field(&accent, "base")?)?,
+            active_icon: read("accent_text")
+                .as_deref()
+                .and_then(optional_colour)
+                .or_else(|| Rgba::parse(field(&accent, "base")?))?,
             backdrop_icon: Rgba::parse(field(&icon_button, "on")?)?,
             hover: Rgba::parse(field(&icon_button, "hover")?)?,
             pressed: Rgba::parse(field(&icon_button, "pressed")?)?,
-            radius: first_number(field(&corner_radii, "radius_s")?)?,
+            radius: first_number(field(&corner_radii, "radius_xl")?)?,
+            gap: read("spacing")
+                .as_deref()
+                .and_then(|spacing| field(spacing, "space_xxs"))
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(STANDARD_GAP),
+            header: if compact { COMPACT } else { STANDARD },
+            header_maximized: if compact {
+                COMPACT_MAXIMIZED
+            } else {
+                STANDARD_MAXIMIZED
+            },
         };
 
         let glass = read("frosted_windows")
@@ -107,11 +133,56 @@ pub fn palette(config_dir: &str) -> Option<String> {
     colour_definitions(&stylesheet)
 }
 
-const THEME_CONFIGS: [&str; 3] = [
+const TOOLKIT_CONFIG: &str = "com.system76.CosmicTk/v1";
+const STANDARD_GAP: u16 = 8;
+const COMPACT: Padding = Padding {
+    top: 3,
+    right: 7,
+    bottom: 4,
+    left: 7,
+};
+const COMPACT_MAXIMIZED: Padding = Padding {
+    top: 4,
+    right: 8,
+    bottom: 4,
+    left: 8,
+};
+const STANDARD: Padding = Padding {
+    top: 7,
+    right: 7,
+    bottom: 8,
+    left: 7,
+};
+const STANDARD_MAXIMIZED: Padding = Padding {
+    top: 8,
+    right: 8,
+    bottom: 8,
+    left: 8,
+};
+
+const THEME_CONFIGS: [&str; 4] = [
     "com.system76.CosmicTheme.Mode/v1",
     "com.system76.CosmicTheme.Dark/v2",
     "com.system76.CosmicTheme.Light/v2",
+    TOOLKIT_CONFIG,
 ];
+
+fn compact_header() -> bool {
+    config_root()
+        .and_then(|root| {
+            std::fs::read_to_string(root.join(TOOLKIT_CONFIG).join("header_size")).ok()
+        })
+        .is_some_and(|size| size.trim() == "Compact")
+}
+
+fn optional_colour(text: &str) -> Option<Rgba> {
+    let trimmed = text.trim();
+    let inner = trimmed
+        .strip_prefix("Some(")
+        .and_then(|rest| rest.strip_suffix(')'))
+        .unwrap_or(trimmed);
+    Rgba::parse(inner)
+}
 
 pub fn watched_directories(config_dir: &str) -> Vec<PathBuf> {
     let mut directories = Vec::new();
@@ -202,7 +273,7 @@ fn first_number(text: &str) -> Option<f32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{colour_definitions, field, first_number, Rgba};
+    use super::{colour_definitions, field, first_number, optional_colour, Rgba};
 
     const ICON_BUTTON: &str = r##"(
     base: "#00000000",
@@ -272,5 +343,14 @@ mod tests {
     #[test]
     fn rejects_malformed_colour() {
         assert!(Rgba::parse("\"#FFF\"").is_none());
+    }
+
+    #[test]
+    fn an_optional_colour_is_read_through_its_wrapper() {
+        assert!(optional_colour("None").is_none());
+        assert_eq!(
+            optional_colour("Some(\"#63D0DFFF\")").unwrap().to_string(),
+            optional_colour("#63D0DFFF").unwrap().to_string()
+        );
     }
 }
