@@ -2,6 +2,8 @@
 
 Makes GTK applications follow the COSMIC desktop's appearance settings.
 
+![Concept art: a GTK window opaque on the left, frosted against the COSMIC desktop on the right](docs/before-and-after.png)
+
 ## What it does
 
 COSMIC can frost the background behind a window, and its own applications use
