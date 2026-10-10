@@ -37,6 +37,9 @@ pub(crate) fn logging_enabled() -> bool {
 }
 
 const MIN_OPACITY: f64 = 0.05;
+const GDK_SKIP_PROTOCOLS: &str = "GDK_WAYLAND_DISABLE";
+const BLUR_MANAGER: &str = "ext_background_effect_manager_v1";
+const SKIP_SEPARATORS: [char; 5] = [':', ';', ',', ' ', '\t'];
 const WINDOW_DATA_KEY: &CStr = c"libcosmic-gtk-appearance";
 const SOURCE_REMOVE: GBoolean = 0;
 const KEEP_EMISSION_HOOK: GBoolean = 1;
@@ -111,12 +114,50 @@ unsafe fn resident_toolkit() -> Option<(Library, &'static CStr)> {
         .find_map(|soname| Library::resident(soname).map(|library| (library, soname)))
 }
 
+static CLAIMED_BLUR: OnceLock<bool> = OnceLock::new();
+
+pub(crate) fn claimed_blur() -> bool {
+    CLAIMED_BLUR.get().copied().unwrap_or(false)
+}
+
+fn blur_manager_is_skipped(listing: &str) -> bool {
+    listing
+        .split(SKIP_SEPARATORS)
+        .any(|name| name == BLUR_MANAGER)
+}
+
+fn listing_with_blur_manager(listing: &str) -> String {
+    if listing.is_empty() {
+        BLUR_MANAGER.to_string()
+    } else {
+        format!("{listing},{BLUR_MANAGER}")
+    }
+}
+
+unsafe fn claim_blur() {
+    CLAIMED_BLUR.get_or_init(|| {
+        let listing = std::env::var(GDK_SKIP_PROTOCOLS).unwrap_or_default();
+        if blur_manager_is_skipped(&listing) {
+            log!("GDK was told to skip {BLUR_MANAGER}, the blur is ours to drive");
+            return true;
+        }
+        if resident_toolkit().is_some() {
+            log!("GTK is already loaded, the blur stays with it");
+            return false;
+        }
+        std::env::set_var(GDK_SKIP_PROTOCOLS, listing_with_blur_manager(&listing));
+        log!("asked GDK to skip {BLUR_MANAGER}");
+        true
+    });
+}
+
 unsafe fn schedule_start() -> Option<()> {
     let disabled = std::env::var_os("COSMIC_GTK_APPEARANCE_DISABLE").is_some();
     let on_wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
     if disabled || !on_wayland {
         return None;
     }
+    claim_blur();
     let glib = Library::resident(c"libglib-2.0.so.0").unwrap_or_else(Library::global);
     let idle_add: extern "C" fn(gtk::SourceFunc, *mut c_void) -> c_uint =
         glib.symbol(c"g_idle_add")?;
@@ -294,7 +335,7 @@ impl Session {
         if !self.connect_blur(display) {
             return false;
         }
-        if self.toolkit.native_background_effect() {
+        if self.toolkit.gtk_owns_blur() {
             return true;
         }
 
@@ -489,5 +530,38 @@ fn read_env_file(variable: &str) -> Option<String> {
             log!("could not read {path}: {error}");
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_listing_that_names_the_manager_hands_us_the_blur() {
+        for listing in [
+            BLUR_MANAGER,
+            "wp_viewporter:ext_background_effect_manager_v1",
+            "a,ext_background_effect_manager_v1,b",
+            "wp_viewporter ext_background_effect_manager_v1",
+        ] {
+            assert!(blur_manager_is_skipped(listing));
+        }
+    }
+
+    #[test]
+    fn a_name_that_only_looks_like_it_does_not() {
+        for listing in ["", "wp_viewporter", "ext_background_effect_manager_v10"] {
+            assert!(!blur_manager_is_skipped(listing));
+        }
+    }
+
+    #[test]
+    fn asking_for_the_manager_keeps_what_was_already_listed() {
+        assert_eq!(listing_with_blur_manager(""), BLUR_MANAGER);
+        assert!(blur_manager_is_skipped(&listing_with_blur_manager(
+            "wp_viewporter"
+        )));
+        assert!(listing_with_blur_manager("wp_viewporter").starts_with("wp_viewporter"));
     }
 }

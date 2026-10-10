@@ -107,14 +107,14 @@ impl Toolkit {
     pub fn stylesheet(&self, glass: Option<&Glass>, decorations: Option<&Decorations>) -> String {
         match self {
             Toolkit::Gtk3(_) => style::gtk3(glass, decorations),
-            Toolkit::Gtk4(s) => style::gtk4(glass, decorations, s.native_background_effect),
+            Toolkit::Gtk4(s) => style::gtk4(glass, decorations, s.gtk_owns_blur),
         }
     }
 
-    pub fn native_background_effect(&self) -> bool {
+    pub fn gtk_owns_blur(&self) -> bool {
         match self {
             Toolkit::Gtk3(_) => false,
-            Toolkit::Gtk4(s) => s.native_background_effect,
+            Toolkit::Gtk4(s) => s.gtk_owns_blur,
         }
     }
 }

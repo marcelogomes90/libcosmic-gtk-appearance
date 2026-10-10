@@ -10,6 +10,8 @@ libdir       := prefix / 'lib' / multiarch / 'gio/modules'
 docdir       := prefix / 'share/doc' / name
 datadir      := prefix / 'share' / name
 user_libdir  := home_directory() / '.local/lib' / name
+session_envd := home_directory() / '.config/environment.d'
+session_env  := session_envd / '95-cosmic-gtk-appearance.conf'
 user_datadir := home_directory() / '.local/share' / name
 debroot      := 'target/deb' / name
 
@@ -26,7 +28,7 @@ check:
     cargo test --release --locked
 
 # Install for native applications and for every flatpak
-setup: install install-user flatpak-enable
+setup: install install-user flatpak-enable session-enable
 
 [private]
 stage destdir sudo='':
@@ -48,6 +50,17 @@ install-user: build
     install -d -m 0755 {{user_datadir}}/examples
     install -m 0644 examples/*.css {{user_datadir}}/examples/
 
+# Hand the blur protocol to this library in applications the session starts
+session-enable:
+    install -d -m 0755 {{session_envd}}
+    printf '%s\n' 'GDK_WAYLAND_DISABLE=${GDK_WAYLAND_DISABLE}:ext_background_effect_manager_v1' > {{session_env}}
+    @echo 'Native applications pick that up at your next login.'
+
+# Give it back to GTK
+[private]
+session-disable:
+    rm -f {{session_env}}
+
 # Grant the user copy to every flatpak, present and future
 flatpak-enable:
     tools/flatpak.sh enable {{user_libdir}}
@@ -57,7 +70,7 @@ flatpak-disable:
     tools/flatpak.sh disable {{user_libdir}}
 
 # Remove everything this installed
-uninstall: flatpak-disable uninstall-user uninstall-system
+uninstall: flatpak-disable session-disable uninstall-user uninstall-system
 
 [private]
 uninstall-system:

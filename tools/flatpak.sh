@@ -6,6 +6,7 @@ modules=${2:-}
 legacy="$HOME/.local/lib/gio/modules"
 overrides="${XDG_DATA_HOME:-$HOME/.local/share}/flatpak/overrides"
 themes=(com.system76.CosmicTheme.Mode com.system76.CosmicTheme.Dark com.system76.CosmicTheme.Light)
+blur_manager=ext_background_effect_manager_v1
 
 command -v flatpak >/dev/null || { echo "flatpak is not installed, nothing to do"; exit 0; }
 
@@ -23,11 +24,16 @@ ours() {
 prune() {
     local file=$1
     [ -f "$file" ] || return 1
-    awk -v drop_fs="$(ours)" -v drop_env="GIO_EXTRA_MODULES" '
+    awk -v drop_fs="$(ours)" -v drop_env="GIO_EXTRA_MODULES;GDK_WAYLAND_DISABLE" '
         function keep(token,   n, i, listed) {
             n = split(drop_fs, listed, ";")
             for (i = 1; i <= n; i++) if (listed[i] != "" && listed[i] == token) return 0
             return 1
+        }
+        function ours_env(key,   n, i, listed) {
+            n = split(drop_env, listed, ";")
+            for (i = 1; i <= n; i++) if (listed[i] == key) return 1
+            return 0
         }
         /^\[/ { section = $0; order[++sections] = section; next }
         /=/ {
@@ -40,7 +46,7 @@ prune() {
                     if (tokens[i] != "" && keep(tokens[i])) kept = kept tokens[i] ";"
                 if (kept == "") next
                 $0 = key "=" kept
-            } else if (section == "[Environment]" && key == drop_env) next
+            } else if (section == "[Environment]" && ours_env(key)) next
             body[section] = body[section] $0 "\n"
             next
         }
@@ -79,7 +85,8 @@ enable)
     [ -d "$modules" ] || { echo "run 'just install-user' first" >&2; exit 1; }
     forget_per_app
     prune "$overrides/global"
-    grants=(--filesystem="$modules":ro --env=GIO_EXTRA_MODULES="$modules")
+    grants=(--filesystem="$modules":ro --env=GIO_EXTRA_MODULES="$modules"
+            --env=GDK_WAYLAND_DISABLE="$blur_manager")
     for theme in "${themes[@]}"; do
         grants+=(--filesystem=xdg-config/cosmic/"$theme")
     done

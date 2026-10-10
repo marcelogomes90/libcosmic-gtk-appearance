@@ -51,11 +51,11 @@ headerbar label:backdrop, headerbar button label:backdrop, .titlebar label:backd
 pub fn gtk4(
     glass: Option<&Glass>,
     decorations: Option<&Decorations>,
-    native_background_effect: bool,
+    gtk_owns_blur: bool,
 ) -> String {
     let mut sheet = String::new();
     if let Some(glass) = glass {
-        let backdrop = if native_background_effect {
+        let backdrop = if gtk_owns_blur {
             "\n  backdrop-filter: blur(32px);"
         } else {
             ""

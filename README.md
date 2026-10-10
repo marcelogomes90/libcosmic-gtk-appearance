@@ -45,12 +45,30 @@ makes the window translucent and flattens the title bar.
 GTK 4.23.3 learned that protocol itself, and it claims the surface's effect
 object whether or not anything asked for blur. A second one is the
 `background_effect_exists` error, which is fatal — the client is disconnected,
-so the application does not open at all. On a GTK that new the library asks
-through CSS instead: `backdrop-filter: blur()` on the window, which is the
-property GTK added alongside the protocol, and GTK sets the blur region on the
-object it already owns. The protocol is still spoken directly to an older GTK,
-and the manager is bound either way, because its capabilities are how we know
-the compositor can blur at all before making a window translucent.
+so the application does not open at all. Worse, the region GTK sets is the
+window geometry rectangle in surface coordinates, and COSMIC reads a blur region
+from the geometry origin rather than from the surface origin: the blur lands one
+shadow margin to the right and below, leaving a strip along the left edge and
+another along the top unblurred. No stylesheet closes that gap, because GTK
+never lets the shadow margin fall below the twelve pixels it keeps for the
+resize handles, and it derives both the geometry and the blur region from the
+same rectangle.
+
+So the library asks GDK to leave the interface alone. `GDK_WAYLAND_DISABLE`
+names Wayland interfaces GDK should not bind, and with
+`ext_background_effect_manager_v1` on that list GTK never creates an effect
+object for its surfaces. The library then speaks the protocol itself, as it does
+to an older GTK, with a region that covers the whole surface — which no offset
+can push off the window. GDK reads the variable when it opens the display, so it
+has to be set before the application starts: the install writes it into the
+flatpak override and into the session environment. The library also sets it when
+it happens to be loaded before GTK is, which is where PyGObject applications
+land. When it arrives too late the CSS route remains: `backdrop-filter: blur()`
+on the window, the property GTK added alongside the protocol, with the strips
+that come with it.
+
+The manager is bound either way, because its capabilities are how we know the
+compositor can blur at all before making a window translucent.
 
 COSMIC hands its palette to GTK by generating `~/.config/gtk-3.0/gtk.css` and
 `~/.config/gtk-4.0/gtk.css`, and GTK reads that file once, on startup: change
@@ -81,10 +99,12 @@ would without it.
 just setup
 ```
 
-That builds the library and does the three things it takes to cover everything:
-installs it system-wide for native applications, puts a second copy where
-sandboxes can reach it, and grants that copy to flatpaks. The system step asks
-for sudo; the rest runs as you.
+That builds the library and does what it takes to cover everything: installs it
+system-wide for native applications, puts a second copy where sandboxes can
+reach it, grants that copy to flatpaks, and hands the blur protocol to the
+library in both. The system step asks for sudo; the rest runs as you. Flatpaks
+are covered the next time they start, and applications the session starts from
+your next login.
 
 The library installs as a GIO module, and every GTK application scans that
 directory on startup, so there is nothing to configure afterwards. Applications
