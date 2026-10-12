@@ -44,6 +44,7 @@ const WINDOW_DATA_KEY: &CStr = c"libcosmic-gtk-appearance";
 const SOURCE_REMOVE: GBoolean = 0;
 const KEEP_EMISSION_HOOK: GBoolean = 1;
 const BLUR_EXTENT: i32 = 32767;
+const SELF_PAINTING_ENGINES: [&CStr; 1] = [c"libxul.so"];
 
 struct Session {
     library: Library,
@@ -114,6 +115,20 @@ unsafe fn resident_toolkit() -> Option<(Library, &'static CStr)> {
         .find_map(|soname| Library::resident(soname).map(|library| (library, soname)))
 }
 
+unsafe fn paints_its_own_background() -> bool {
+    let Some(engine) = SELF_PAINTING_ENGINES
+        .into_iter()
+        .find(|soname| Library::resident(soname).is_some())
+    else {
+        return false;
+    };
+    log!(
+        "{} paints its own window background, leaving this process alone",
+        engine.to_string_lossy()
+    );
+    true
+}
+
 static CLAIMED_BLUR: OnceLock<bool> = OnceLock::new();
 
 pub(crate) fn claimed_blur() -> bool {
@@ -154,7 +169,7 @@ unsafe fn claim_blur() {
 unsafe fn schedule_start() -> Option<()> {
     let disabled = std::env::var_os("COSMIC_GTK_APPEARANCE_DISABLE").is_some();
     let on_wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
-    if disabled || !on_wayland {
+    if disabled || !on_wayland || paints_its_own_background() {
         return None;
     }
     claim_blur();
@@ -181,6 +196,9 @@ unsafe fn start_session() -> Option<()> {
         return Some(());
     }
 
+    if paints_its_own_background() {
+        return None;
+    }
     let Some((library, soname)) = resident_toolkit() else {
         log!("no GTK in this process, nothing to do");
         return None;

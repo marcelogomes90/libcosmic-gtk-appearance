@@ -77,9 +77,11 @@ views. For a flatpak, pass the variable through the sandbox:
 
 - An application that paints its own window background wins, because GTK
   flattens every layer before the compositor sees it. GTK is only the frame for
-  Gecko and for Chromium, so Firefox, Thunderbird and Electron applications stay
-  solid: the blur is attached and the stylesheet is loaded, and neither reaches
-  the pixels.
+  Gecko and for Chromium, so Firefox, Thunderbird and Electron applications never
+  turn frosted. Gecko goes one step further and reads the GTK colours to paint
+  them itself, so a window left without a background colour reaches it as a hole
+  in the header bar and in the status strip; the library recognises `libxul.so`
+  and leaves those processes untouched.
 - Popovers, menus and tooltips are separate surfaces and stay opaque on purpose,
   and so is anything drawn into a `picture`, so an image shows against a solid
   background rather than against the desktop.
