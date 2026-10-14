@@ -13,9 +13,12 @@ pub struct Rgba {
 }
 
 impl Rgba {
-    pub(crate) fn parse(text: &str) -> Option<Self> {
+    pub fn parse(text: &str) -> Option<Self> {
         let hex = text.trim().trim_matches('"').trim_start_matches('#');
         if hex.len() != 6 && hex.len() != 8 {
+            return None;
+        }
+        if !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
             return None;
         }
         let channel = |at: usize| u8::from_str_radix(hex.get(at..at + 2)?, 16).ok();
@@ -126,10 +129,18 @@ impl Appearance {
     }
 }
 
-pub fn palette(config_dir: &str) -> Option<String> {
-    let stylesheet = config_homes()
+fn generated_stylesheet(config_dir: &str) -> Option<(PathBuf, String)> {
+    config_homes()
         .map(|home| home.join(config_dir).join("gtk.css"))
-        .find_map(|path| std::fs::read_to_string(path).ok())?;
+        .find_map(|path| {
+            std::fs::read_to_string(&path)
+                .ok()
+                .map(|stylesheet| (path, stylesheet))
+        })
+}
+
+pub fn palette(config_dir: &str) -> Option<String> {
+    let (_, stylesheet) = generated_stylesheet(config_dir)?;
     colour_definitions(&stylesheet)
 }
 
@@ -187,19 +198,28 @@ fn optional_colour(text: &str) -> Option<Rgba> {
 pub fn watched_directories(config_dir: &str) -> Vec<PathBuf> {
     let mut directories = Vec::new();
     if let Some(root) = config_root() {
+        remember(&mut directories, root.clone());
         for leaf in THEME_CONFIGS {
             remember(&mut directories, root.join(leaf));
         }
     }
+    if let Some((stylesheet, _)) = generated_stylesheet(config_dir) {
+        if let Some(beside) = stylesheet.parent() {
+            remember(&mut directories, beside.to_path_buf());
+        }
+        if let Some(resolved) = std::fs::canonicalize(&stylesheet)
+            .ok()
+            .and_then(|path| path.parent().map(Path::to_path_buf))
+        {
+            remember(&mut directories, resolved);
+        }
+    }
     for home in config_homes() {
         let directory = home.join(config_dir);
-        let generated = std::fs::canonicalize(directory.join("gtk.css"))
-            .ok()
-            .and_then(|path| path.parent().map(Path::to_path_buf));
-        remember(&mut directories, directory);
-        if let Some(generated) = generated {
-            remember(&mut directories, generated);
-            break;
+        if directory.is_dir() {
+            remember(&mut directories, directory);
+        } else {
+            remember(&mut directories, home);
         }
     }
     directories

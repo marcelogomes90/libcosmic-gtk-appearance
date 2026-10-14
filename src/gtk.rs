@@ -25,14 +25,23 @@ pub struct Gtk {
     pub type_check_instance_is_a: extern "C" fn(*mut c_void, GType) -> GBoolean,
     pub signal_add_emission_hook:
         extern "C" fn(c_uint, GQuark, EmissionHook, *mut c_void, *const c_void) -> c_ulong,
+    pub signal_connect_data: extern "C" fn(
+        *mut c_void,
+        *const c_char,
+        *const c_void,
+        *mut c_void,
+        *const c_void,
+        c_uint,
+    ) -> c_ulong,
     pub value_get_object: extern "C" fn(*const c_void) -> *mut c_void,
     pub object_get_data: extern "C" fn(*mut c_void, *const c_char) -> *mut c_void,
     pub object_set_data_full: extern "C" fn(*mut c_void, *const c_char, *mut c_void, *const c_void),
-    pub object_ref: extern "C" fn(*mut c_void) -> *mut c_void,
-    pub object_unref: extern "C" fn(*mut c_void),
+    pub quark_from_static_string: extern "C" fn(*const c_char) -> GQuark,
+    pub type_get_qdata: extern "C" fn(GType, GQuark) -> *mut c_void,
+    pub type_set_qdata: extern "C" fn(GType, GQuark, *mut c_void),
     pub idle_add: extern "C" fn(SourceFunc, *mut c_void) -> c_uint,
-    pub timeout_add: TimeoutAdd,
-    pub unix_fd_add_full: AddFdSource,
+    pub timeout_add: Option<TimeoutAdd>,
+    pub unix_fd_add_full: Option<AddFdSource>,
     pub list_free: extern "C" fn(*mut GList),
     pub widget_get_mapped: extern "C" fn(*mut c_void) -> GBoolean,
     pub widget_queue_draw: extern "C" fn(*mut c_void),
@@ -40,6 +49,11 @@ pub struct Gtk {
     pub css_provider_new: extern "C" fn() -> *mut c_void,
     pub map_signal: c_uint,
     pub window_type: GType,
+}
+
+pub struct ObjectRefs {
+    pub object_ref: extern "C" fn(*mut c_void) -> *mut c_void,
+    pub object_unref: extern "C" fn(*mut c_void),
 }
 
 impl Gtk {
@@ -59,17 +73,25 @@ impl Gtk {
             return None;
         }
 
+        let timeout_add: Option<TimeoutAdd> = library.symbol(c"g_timeout_add");
+        let unix_fd_add_full: Option<AddFdSource> = library.symbol(c"g_unix_fd_add_full");
+        if timeout_add.is_none() || unix_fd_add_full.is_none() {
+            log!("no main loop fd sources, the appearance will not follow live changes");
+        }
+
         Some(Self {
             type_check_instance_is_a: resolve!(library, c"g_type_check_instance_is_a"),
             signal_add_emission_hook: resolve!(library, c"g_signal_add_emission_hook"),
+            signal_connect_data: resolve!(library, c"g_signal_connect_data"),
             value_get_object: resolve!(library, c"g_value_get_object"),
             object_get_data: resolve!(library, c"g_object_get_data"),
             object_set_data_full: resolve!(library, c"g_object_set_data_full"),
-            object_ref: resolve!(library, c"g_object_ref"),
-            object_unref: resolve!(library, c"g_object_unref"),
+            quark_from_static_string: resolve!(library, c"g_quark_from_static_string"),
+            type_get_qdata: resolve!(library, c"g_type_get_qdata"),
+            type_set_qdata: resolve!(library, c"g_type_set_qdata"),
             idle_add: resolve!(library, c"g_idle_add"),
-            timeout_add: resolve!(library, c"g_timeout_add"),
-            unix_fd_add_full: resolve!(library, c"g_unix_fd_add_full"),
+            timeout_add,
+            unix_fd_add_full,
             list_free: resolve!(library, c"g_list_free"),
             widget_get_mapped: resolve!(library, c"gtk_widget_get_mapped"),
             widget_queue_draw: resolve!(library, c"gtk_widget_queue_draw"),
@@ -86,5 +108,29 @@ impl Gtk {
 
     pub unsafe fn is_mapped(&self, widget: *mut c_void) -> bool {
         (self.widget_get_mapped)(widget) != 0
+    }
+
+    pub unsafe fn is_a(&self, instance: *mut c_void, kind: GType) -> bool {
+        !instance.is_null() && (self.type_check_instance_is_a)(instance, kind) != 0
+    }
+
+    pub unsafe fn each_in_list(&self, list: *mut GList, mut visit: impl FnMut(*mut c_void)) {
+        let mut node = list;
+        while !node.is_null() {
+            visit((*node).data);
+            node = (*node).next;
+        }
+        if !list.is_null() {
+            (self.list_free)(list);
+        }
+    }
+}
+
+impl ObjectRefs {
+    pub unsafe fn load(library: &Library) -> Option<Self> {
+        Some(Self {
+            object_ref: resolve!(library, c"g_object_ref"),
+            object_unref: resolve!(library, c"g_object_unref"),
+        })
     }
 }

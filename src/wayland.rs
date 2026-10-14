@@ -2,7 +2,8 @@
 // Copyright (C) 2026 Marcelo
 
 use std::ffi::{c_char, c_int, c_void, CStr};
-use std::ptr;
+use std::ptr::{self, NonNull};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::log;
 
@@ -55,10 +56,22 @@ const REGISTRY_BIND: u32 = 0;
 const COMPOSITOR_CREATE_REGION: u32 = 1;
 const REGION_DESTROY: u32 = 0;
 const REGION_ADD: u32 = 1;
+const MANAGER_DESTROY: u32 = 0;
 const MANAGER_GET_BACKGROUND_EFFECT: u32 = 1;
 const EFFECT_DESTROY: u32 = 0;
 const EFFECT_SET_BLUR_REGION: u32 = 1;
 const CAPABILITY_BLUR: u32 = 1;
+
+static DISPLAY_CLOSED: AtomicBool = AtomicBool::new(false);
+
+pub fn note_display_closed() {
+    DISPLAY_CLOSED.store(true, Ordering::Relaxed);
+    log!("the display is gone, no further wayland requests");
+}
+
+fn display_closed() -> bool {
+    DISPLAY_CLOSED.load(Ordering::Relaxed)
+}
 
 struct Shared<T>(T);
 
@@ -145,6 +158,9 @@ extern "C" fn on_global(
         if discovery.is_null() || interface.is_null() {
             return;
         }
+        if !(*discovery).proxy.is_null() {
+            return;
+        }
         let wanted = &MANAGER.0;
         if CStr::from_ptr(interface) != CStr::from_ptr(wanted.name) {
             return;
@@ -188,8 +204,8 @@ extern "C" fn on_capabilities(data: *mut c_void, _manager: *mut c_void, flags: u
 }
 
 pub struct BlurManager {
-    proxy: *mut c_void,
-    capabilities: *mut u32,
+    proxy: NonNull<c_void>,
+    capabilities: Box<u32>,
 }
 
 impl BlurManager {
@@ -211,10 +227,10 @@ impl BlurManager {
             return None;
         }
 
-        let capabilities = Box::into_raw(Box::new(0u32));
+        let mut capabilities = Box::new(0u32);
         let mut discovery = Discovery {
             proxy: ptr::null_mut(),
-            capabilities,
+            capabilities: &raw mut *capabilities,
         };
         wl_proxy_set_queue(registry, queue);
         wl_proxy_add_listener(
@@ -227,13 +243,12 @@ impl BlurManager {
         wl_proxy_destroy(registry);
 
         let Discovery { proxy, .. } = discovery;
-        if proxy.is_null() {
+        let Some(proxy) = NonNull::new(proxy) else {
             log!("compositor does not advertise ext_background_effect_manager_v1");
             wl_event_queue_destroy(queue);
-            drop(Box::from_raw(capabilities));
             return None;
-        }
-        wl_proxy_set_queue(proxy, ptr::null_mut());
+        };
+        wl_proxy_set_queue(proxy.as_ptr(), ptr::null_mut());
         wl_event_queue_destroy(queue);
 
         log!("manager bound, caps=0x{:x}", *capabilities);
@@ -244,7 +259,7 @@ impl BlurManager {
     }
 
     pub fn capabilities(&self) -> u32 {
-        unsafe { *self.capabilities }
+        *self.capabilities
     }
 
     pub fn supports_blur(&self) -> bool {
@@ -252,25 +267,48 @@ impl BlurManager {
     }
 
     pub unsafe fn effect_for(&self, surface: *mut c_void) -> Option<BlurEffect> {
+        if display_closed() {
+            return None;
+        }
         let proxy = wl_proxy_marshal_flags(
-            self.proxy,
+            self.proxy.as_ptr(),
             MANAGER_GET_BACKGROUND_EFFECT,
             &EFFECT.0,
-            wl_proxy_get_version(self.proxy),
+            wl_proxy_get_version(self.proxy.as_ptr()),
             0,
             ptr::null_mut::<c_void>(),
             surface,
         );
-        (!proxy.is_null()).then_some(BlurEffect { proxy })
+        NonNull::new(proxy).map(|proxy| BlurEffect { proxy })
+    }
+}
+
+impl Drop for BlurManager {
+    fn drop(&mut self) {
+        if display_closed() {
+            return;
+        }
+        unsafe {
+            wl_proxy_marshal_flags(
+                self.proxy.as_ptr(),
+                MANAGER_DESTROY,
+                ptr::null(),
+                wl_proxy_get_version(self.proxy.as_ptr()),
+                DESTROY_FLAG,
+            );
+        }
     }
 }
 
 pub struct BlurEffect {
-    proxy: *mut c_void,
+    proxy: NonNull<c_void>,
 }
 
 impl BlurEffect {
     pub unsafe fn set_region(&self, compositor: *mut c_void, extent: i32) {
+        if display_closed() || compositor.is_null() {
+            return;
+        }
         let region = wl_proxy_marshal_flags(
             compositor,
             COMPOSITOR_CREATE_REGION,
@@ -294,10 +332,10 @@ impl BlurEffect {
             extent,
         );
         wl_proxy_marshal_flags(
-            self.proxy,
+            self.proxy.as_ptr(),
             EFFECT_SET_BLUR_REGION,
             ptr::null(),
-            wl_proxy_get_version(self.proxy),
+            wl_proxy_get_version(self.proxy.as_ptr()),
             0,
             region,
         );
@@ -313,12 +351,15 @@ impl BlurEffect {
 
 impl Drop for BlurEffect {
     fn drop(&mut self) {
+        if display_closed() {
+            return;
+        }
         unsafe {
             wl_proxy_marshal_flags(
-                self.proxy,
+                self.proxy.as_ptr(),
                 EFFECT_DESTROY,
                 ptr::null(),
-                wl_proxy_get_version(self.proxy),
+                wl_proxy_get_version(self.proxy.as_ptr()),
                 DESTROY_FLAG,
             );
         }

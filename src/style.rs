@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // Copyright (C) 2026 Marcelo
 
+use std::ffi::CStr;
 use std::fmt::Write;
 
 use crate::cosmic::{Decorations, Glass, Padding};
@@ -9,6 +10,15 @@ const PLAIN_ICON: &str = concat!(
     "button.image-button:not(.titlebutton):not(.suggested-action)",
     ":not(.destructive-action):not(.opaque):not(.raised)"
 );
+const SIDEBAR_TITLEBAR: &str = "cosmic-sidebar-titlebar";
+pub const SIDEBAR_TITLEBAR_CLASS: &CStr = c"cosmic-sidebar-titlebar";
+pub const GTK3_FALLBACK_PALETTE: &str = "\
+@define-color window_bg_color @theme_bg_color;
+@define-color view_bg_color @theme_base_color;
+@define-color headerbar_bg_color @theme_bg_color;
+@define-color headerbar_fg_color @theme_fg_color;
+@define-color sidebar_bg_color @theme_base_color;
+";
 const CONTROL_ICON: u16 = 16;
 const CONTROL_PADDING: u16 = 8;
 const HEADER_CONTENT: u16 = 32;
@@ -100,9 +110,16 @@ popovermenubar, popovermenubar:backdrop {{
   background-color: @window_bg_color;
 }}
 
+.sidebar-pane headerbar, .sidebar-pane .titlebar,
+.sidebar-pane > .top-bar, .sidebar-pane > .top-bar.raised,
+headerbar.{marker}, .titlebar.{marker} {{
+  background-color: alpha(@sidebar_bg_color, {sidebar});
+}}
+
 ",
             window = glass.window_opacity,
-            sidebar = glass.sidebar_opacity
+            sidebar = glass.sidebar_opacity,
+            marker = SIDEBAR_TITLEBAR
         );
         if glass.opaque_when_maximized {
             sheet.push_str(
@@ -257,7 +274,11 @@ messagedialog.background:not(.popup) {{
   background-color: transparent;
 }}
 
-.sidebar, placessidebar, placessidebar list {{
+.sidebar:not(separator), placessidebar, placessidebar list {{
+  background-color: alpha(@sidebar_bg_color, {sidebar});
+}}
+
+headerbar.{marker}, .titlebar.{marker} {{
   background-color: alpha(@sidebar_bg_color, {sidebar});
 }}
 
@@ -271,7 +292,8 @@ menubar, menubar:backdrop, .menubar, .menubar:backdrop {{
 
 ",
             window = glass.window_opacity,
-            sidebar = glass.sidebar_opacity
+            sidebar = glass.sidebar_opacity,
+            marker = SIDEBAR_TITLEBAR
         );
         if glass.opaque_when_maximized {
             sheet.push_str(
@@ -549,6 +571,102 @@ mod tests {
         assert!(sheet.contains("min-height: 48px;"));
         assert!(sheet.contains("padding: 8px 8px 8px 8px;"));
         assert!(sheet.contains("border-spacing: 8px;"));
+    }
+
+    fn tokens(sheet: &str) -> std::collections::BTreeSet<String> {
+        let mut found = std::collections::BTreeSet::new();
+        for rest in sheet.split('@').skip(1) {
+            let name: String = rest
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .collect();
+            if !name.is_empty() && name != "define" {
+                found.insert(name);
+            }
+        }
+        found
+    }
+
+    fn defined(palette: &str) -> std::collections::BTreeSet<String> {
+        palette
+            .lines()
+            .filter_map(|line| line.strip_prefix("@define-color "))
+            .filter_map(|rest| rest.split_whitespace().next())
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn the_marker_in_the_stylesheet_is_the_class_the_walk_adds() {
+        assert_eq!(SIDEBAR_TITLEBAR, SIDEBAR_TITLEBAR_CLASS.to_str().unwrap());
+    }
+
+    #[test]
+    fn a_separator_that_only_marks_a_sidebar_is_left_alone() {
+        let sheet = gtk3(Some(&glass()), Some(&decorations()));
+        assert!(sheet.contains(".sidebar:not(separator)"));
+        for rule in sheet.split('}') {
+            if rule.contains("alpha(@sidebar_bg_color") {
+                assert!(rule.contains(":not(separator)") || rule.contains(SIDEBAR_TITLEBAR));
+            }
+        }
+    }
+
+    #[test]
+    fn the_title_bar_above_a_sidebar_follows_it_only_under_glass() {
+        for sheet in [
+            gtk3(Some(&glass()), Some(&decorations())),
+            gtk4(Some(&glass()), Some(&decorations()), false),
+        ] {
+            assert!(sheet.contains(&format!("headerbar.{SIDEBAR_TITLEBAR}")));
+        }
+        for sheet in [
+            gtk3(None, Some(&decorations())),
+            gtk4(None, Some(&decorations()), false),
+        ] {
+            assert!(!sheet.contains(SIDEBAR_TITLEBAR));
+        }
+    }
+
+    #[test]
+    fn the_marked_title_bar_takes_exactly_what_the_sidebar_takes() {
+        let tinted = format!("alpha(@sidebar_bg_color, {})", glass().sidebar_opacity);
+        for sheet in [
+            gtk3(Some(&glass()), None),
+            gtk4(Some(&glass()), None, false),
+        ] {
+            let marked = sheet
+                .split('}')
+                .find(|rule| rule.contains(SIDEBAR_TITLEBAR))
+                .expect("the marked rule is emitted");
+            assert!(marked.contains(&tinted));
+        }
+    }
+
+    #[test]
+    fn the_gtk3_reserve_defines_every_token_the_sheet_asks_for() {
+        let mut asked = std::collections::BTreeSet::new();
+        for glass_setting in [None, Some(glass())] {
+            for theme in [None, Some(decorations())] {
+                asked.extend(tokens(&gtk3(glass_setting.as_ref(), theme.as_ref())));
+            }
+        }
+        assert_eq!(defined(GTK3_FALLBACK_PALETTE), asked);
+    }
+
+    #[test]
+    fn the_reserve_only_leans_on_colours_gtk3_defines_itself() {
+        let leaned_on: std::collections::BTreeSet<String> = tokens(GTK3_FALLBACK_PALETTE)
+            .difference(&defined(GTK3_FALLBACK_PALETTE))
+            .cloned()
+            .collect();
+        assert_eq!(
+            leaned_on,
+            ["theme_base_color", "theme_bg_color", "theme_fg_color"]
+                .into_iter()
+                .map(str::to_string)
+                .collect()
+        );
     }
 
     #[test]

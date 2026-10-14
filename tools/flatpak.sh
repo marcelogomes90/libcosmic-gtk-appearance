@@ -90,13 +90,23 @@ enable)
     for theme in "${themes[@]}"; do
         grants+=(--filesystem=xdg-config/cosmic/"$theme")
     done
-    flatpak override --user "${grants[@]}" \
-        && echo "granted to every flatpak, installed or not yet, through the global override"
+    if flatpak override --user "${grants[@]}"; then
+        echo "granted to every flatpak, installed or not yet, through the global override:"
+        printf '  %s\n' "${grants[@]}"
+        echo "flatpaks pick that up the next time they start."
+    fi
     ;;
 disable)
+    had=0
+    grep -qF -e "$modules" -e "$legacy" -e 'xdg-config/cosmic/com.system76.CosmicTheme' \
+        -e GIO_EXTRA_MODULES -e GDK_WAYLAND_DISABLE "$overrides/global" 2>/dev/null && had=1
     forget_per_app
     prune "$overrides/global"
-    echo "revoked from every flatpak"
+    if [ "$had" = 1 ]; then
+        echo "revoked from every flatpak, leaving any grant this tool did not write"
+    else
+        echo "no global flatpak grant of ours was in place"
+    fi
     ;;
 *)
     echo "usage: $0 {enable|disable} <modules-dir>" >&2

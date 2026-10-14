@@ -25,6 +25,7 @@ const RTLD_NODELETE: i32 = 0x1000;
 extern "C" {
     fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
     fn dlopen(path: *const c_char, flags: i32) -> *mut c_void;
+    fn dlclose(handle: *mut c_void) -> i32;
     fn dladdr(address: *const c_void, info: *mut SharedObjectInfo) -> i32;
 }
 
@@ -41,9 +42,19 @@ impl Library {
     }
 
     pub unsafe fn symbol<T: Copy>(&self, name: &CStr) -> Option<T> {
-        debug_assert_eq!(size_of::<T>(), size_of::<*mut c_void>());
+        const {
+            assert!(size_of::<T>() == size_of::<*mut c_void>());
+        }
         let address = dlsym(self.0, name.as_ptr());
         (!address.is_null()).then(|| transmute_copy(&address))
+    }
+}
+
+impl Drop for Library {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe { dlclose(self.0) };
+        }
     }
 }
 
