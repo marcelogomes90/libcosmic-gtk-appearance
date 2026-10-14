@@ -35,7 +35,9 @@ fn decorations() -> Decorations {
 
 fn glasses() -> Vec<(&'static str, Glass)> {
     let mut found = Vec::new();
-    for (name, window, sidebar) in [("tinted", 0.76, 1.0), ("translucent", 0.6, 0.7)] {
+    for (name, window, sidebar, secondary) in
+        [("tinted", 0.76, 1.0, 1.0), ("translucent", 0.6, 0.7, 0.85)]
+    {
         for opaque_when_maximized in [false, true] {
             found.push((
                 if opaque_when_maximized {
@@ -46,6 +48,7 @@ fn glasses() -> Vec<(&'static str, Glass)> {
                 Glass {
                     window_opacity: window,
                     sidebar_opacity: sidebar,
+                    secondary_opacity: secondary,
                     opaque_when_maximized,
                 },
             ));

@@ -617,6 +617,7 @@ fn resolve_glass(appearance: Option<&Appearance>) -> Option<Glass> {
     Some(Glass {
         window_opacity: forced,
         sidebar_opacity: forced,
+        secondary_opacity: forced,
         opaque_when_maximized: configured.is_some_and(|glass| glass.opaque_when_maximized),
     })
 }

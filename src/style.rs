@@ -11,6 +11,10 @@ const PLAIN_ICON: &str = concat!(
     ":not(.destructive-action):not(.opaque):not(.raised)"
 );
 const SIDEBAR_TITLEBAR: &str = "cosmic-sidebar-titlebar";
+const NESTED_PANE: &str = concat!(
+    ":not(.isolated) > .content-pane :not(.isolated) > .sidebar-pane,\n",
+    ":not(.isolated) > .sidebar-pane :not(.isolated) > .content-pane"
+);
 pub const SIDEBAR_TITLEBAR_CLASS: &CStr = c"cosmic-sidebar-titlebar";
 pub const GTK3_FALLBACK_PALETTE: &str = "\
 @define-color window_bg_color @theme_bg_color;
@@ -50,6 +54,16 @@ impl Tokens {
             },
         }
     }
+}
+
+fn solid_when_maximized(selectors: &str) -> String {
+    let mut listed = Vec::new();
+    for state in ["maximized", "fullscreen"] {
+        for selector in selectors.split(",\n") {
+            listed.push(format!("window.{state} {}", selector.trim()));
+        }
+    }
+    listed.join(",\n")
 }
 
 fn title(sheet: &mut String, backdrop_icon: &str) {
@@ -110,16 +124,24 @@ popovermenubar, popovermenubar:backdrop {{
   background-color: @window_bg_color;
 }}
 
-.sidebar-pane headerbar, .sidebar-pane .titlebar,
-.sidebar-pane > .top-bar, .sidebar-pane > .top-bar.raised,
-headerbar.{marker}, .titlebar.{marker} {{
-  background-color: alpha(@sidebar_bg_color, {sidebar});
+{nested} {{
+  background-color: alpha(@secondary_sidebar_bg_color, {secondary});
+}}
+
+.sidebar-pane .sidebar-pane {{
+  background-color: transparent;
+}}
+
+.sidebar-pane .navigation-sidebar, .sidebar-pane .sidebar,
+.sidebar-pane list, .sidebar-pane listview.view {{
+  background-color: transparent;
 }}
 
 ",
             window = glass.window_opacity,
             sidebar = glass.sidebar_opacity,
-            marker = SIDEBAR_TITLEBAR
+            secondary = glass.secondary_opacity,
+            nested = NESTED_PANE
         );
         if glass.opaque_when_maximized {
             sheet.push_str(
@@ -141,6 +163,15 @@ window.fullscreen .navigation-sidebar, window.fullscreen .sidebar {
 }
 
 ",
+            );
+            let _ = write!(
+                sheet,
+                "{maximized} {{
+  background-color: @secondary_sidebar_bg_color;
+}}
+
+",
+                maximized = solid_when_maximized(NESTED_PANE)
             );
         }
     }
@@ -446,6 +477,7 @@ mod tests {
         Glass {
             window_opacity: 0.76,
             sidebar_opacity: 1.0,
+            secondary_opacity: 1.0,
             opaque_when_maximized: true,
         }
     }
@@ -614,33 +646,53 @@ mod tests {
 
     #[test]
     fn the_title_bar_above_a_sidebar_follows_it_only_under_glass() {
-        for sheet in [
-            gtk3(Some(&glass()), Some(&decorations())),
-            gtk4(Some(&glass()), Some(&decorations()), false),
+        let marked = gtk3(Some(&glass()), Some(&decorations()));
+        assert!(marked.contains(&format!("headerbar.{SIDEBAR_TITLEBAR}")));
+        assert!(!gtk3(None, Some(&decorations())).contains(SIDEBAR_TITLEBAR));
+    }
+
+    #[test]
+    fn gtk4_leaves_the_title_bar_to_the_pane_it_sits_in() {
+        let sheet = gtk4(Some(&glass()), Some(&decorations()), false);
+        assert!(!sheet.contains(SIDEBAR_TITLEBAR));
+        assert!(sheet.contains(".sidebar-pane list, .sidebar-pane listview.view"));
+    }
+
+    #[test]
+    fn a_nested_pane_keeps_the_secondary_container_colour() {
+        let sheet = gtk4(Some(&glass()), None, false);
+        let nested = sheet
+            .split('}')
+            .find(|rule| rule.contains(NESTED_PANE))
+            .expect("the nested pane is given its own colour");
+        assert!(nested.contains("alpha(@secondary_sidebar_bg_color"));
+        assert!(!gtk4(None, None, false).contains("secondary_sidebar_bg_color"));
+    }
+
+    #[test]
+    fn nothing_inside_a_pane_paints_over_it() {
+        let sheet = gtk4(Some(&glass()), None, false);
+        for inner in [
+            ".sidebar-pane .sidebar-pane",
+            ".sidebar-pane .navigation-sidebar",
         ] {
-            assert!(sheet.contains(&format!("headerbar.{SIDEBAR_TITLEBAR}")));
-        }
-        for sheet in [
-            gtk3(None, Some(&decorations())),
-            gtk4(None, Some(&decorations()), false),
-        ] {
-            assert!(!sheet.contains(SIDEBAR_TITLEBAR));
+            let rule = sheet
+                .split('}')
+                .find(|rule| rule.contains(inner))
+                .expect("the rule is emitted");
+            assert!(rule.contains("background-color: transparent"));
         }
     }
 
     #[test]
     fn the_marked_title_bar_takes_exactly_what_the_sidebar_takes() {
         let tinted = format!("alpha(@sidebar_bg_color, {})", glass().sidebar_opacity);
-        for sheet in [
-            gtk3(Some(&glass()), None),
-            gtk4(Some(&glass()), None, false),
-        ] {
-            let marked = sheet
-                .split('}')
-                .find(|rule| rule.contains(SIDEBAR_TITLEBAR))
-                .expect("the marked rule is emitted");
-            assert!(marked.contains(&tinted));
-        }
+        let sheet = gtk3(Some(&glass()), None);
+        let marked = sheet
+            .split('}')
+            .find(|rule| rule.contains(SIDEBAR_TITLEBAR))
+            .expect("the marked rule is emitted");
+        assert!(marked.contains(&tinted));
     }
 
     #[test]

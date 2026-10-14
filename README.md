@@ -89,6 +89,7 @@ number this library chose.
 | --- | --- |
 | window background | the alpha of `transparent_background.base` |
 | sidebars and sidebar panes | the alpha of `transparent_primary.base`, which is `FF` by default, so a sidebar stays solid over the frosted window |
+| a second sidebar beside the first | the alpha of `transparent_secondary.base`, so the two keep the boundary libadwaita draws between them |
 | the title bar above a sidebar | the same value as the sidebar below it |
 | title bars, toolbars and window handles | cleared, so the window background reaches the top of the window |
 | window control icons | `accent_text` or `accent.base`, and the hover and pressed tints from `icon_button` |
@@ -100,17 +101,22 @@ number this library chose.
 | text views and pictures | `view_bg_color`, so text keeps its contrast and an image shows against a surface rather than against the desktop |
 | menu bars | `window_bg_color`, whichever way the window is focused |
 
-Finding the title bar that belongs to a sidebar means looking at the widgets, not
-only at the CSS: libadwaita marks the pane the title bar sits in, and GTK3
-applications mark the sidebar's divider instead, so there the title bar is the one
-just before that divider. Nothing else about the widget tree is touched.
+Finding the title bar that belongs to a sidebar works differently per toolkit.
+libadwaita marks the pane the title bar sits in, so clearing the title bar is
+enough — the pane's own colour shows through, whether that is the first sidebar's
+or the second's. GTK3 applications mark the sidebar's *divider* instead, so there
+the title bar has to be found among the widgets: it is the one just before that
+divider. Nothing else about the widget tree is touched.
+
+Nothing inside a pane is painted over it, which is how libadwaita builds a
+sidebar too: the list is transparent and the pane carries the colour. Painting
+the list instead would flatten a second sidebar into the first.
 
 These are left alone on purpose:
 
 - popovers, menus and tooltips, which are separate Wayland surfaces the blur
   could not reach behind anyway;
-- cards and boxed lists, because COSMIC's secondary container is solid —
-  `transparent_secondary.base` carries no alpha;
+- cards and boxed lists, which keep their own `card_bg_color`;
 - the window corner radius and the active-window hint, which cosmic-comp draws
   for every window whatever toolkit it came from;
 - a `GtkSeparator` an application marks as a sidebar, because libhandy marks the

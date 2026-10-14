@@ -52,6 +52,7 @@ impl fmt::Display for Rgba {
 pub struct Glass {
     pub window_opacity: f64,
     pub sidebar_opacity: f64,
+    pub secondary_opacity: f64,
     pub opaque_when_maximized: bool,
 }
 
@@ -117,9 +118,11 @@ impl Appearance {
             .and_then(|_| {
                 let background = read("transparent_background")?;
                 let primary = read("transparent_primary")?;
+                let secondary = read("transparent_secondary")?;
                 Some(Glass {
                     window_opacity: Rgba::parse(field(&background, "base")?)?.opacity(),
                     sidebar_opacity: Rgba::parse(field(&primary, "base")?)?.opacity(),
+                    secondary_opacity: Rgba::parse(field(&secondary, "base")?)?.opacity(),
                     opaque_when_maximized: read("frosted_maximized_apps")
                         .is_some_and(|flag| flag.trim() != "true"),
                 })
