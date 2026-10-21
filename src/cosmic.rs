@@ -123,8 +123,7 @@ impl Appearance {
                     window_opacity: Rgba::parse(field(&background, "base")?)?.opacity(),
                     sidebar_opacity: Rgba::parse(field(&primary, "base")?)?.opacity(),
                     secondary_opacity: Rgba::parse(field(&secondary, "base")?)?.opacity(),
-                    opaque_when_maximized: read("frosted_maximized_apps")
-                        .is_some_and(|flag| flag.trim() != "true"),
+                    opaque_when_maximized: opaque_when_maximized(read("frosted_maximized_apps")),
                 })
             });
 
@@ -187,6 +186,10 @@ fn compact_header() -> bool {
             std::fs::read_to_string(root.join(TOOLKIT_CONFIG).join("header_size")).ok()
         })
         .is_some_and(|size| size.trim() == "Compact")
+}
+
+fn opaque_when_maximized(flag: Option<String>) -> bool {
+    flag.is_none_or(|flag| flag.trim() != "true")
 }
 
 fn optional_colour(text: &str) -> Option<Rgba> {
@@ -296,7 +299,9 @@ fn first_number(text: &str) -> Option<f32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{colour_definitions, field, first_number, optional_colour, Rgba};
+    use super::{
+        colour_definitions, field, first_number, opaque_when_maximized, optional_colour, Rgba,
+    };
 
     const ICON_BUTTON: &str = r##"(
     base: "#00000000",
@@ -366,6 +371,13 @@ mod tests {
     #[test]
     fn rejects_malformed_colour() {
         assert!(Rgba::parse("\"#FFF\"").is_none());
+    }
+
+    #[test]
+    fn a_window_without_the_frosted_maximized_setting_turns_solid() {
+        assert!(opaque_when_maximized(None));
+        assert!(opaque_when_maximized(Some("false\n".into())));
+        assert!(!opaque_when_maximized(Some("true\n".into())));
     }
 
     #[test]
