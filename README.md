@@ -23,7 +23,24 @@ would without the library.
 
 ## Installing
 
+This needs a COSMIC session on Wayland, and three things to build with: `git`,
+`just`, and Rust 1.82 or newer. On Pop!_OS, Ubuntu and Debian:
+
 ```sh
+sudo apt install git just cargo
+```
+
+That is the whole list. `cargo` brings rustc and the C linker along with it, and
+the library has no dependencies of its own, so there are no development packages
+to hunt down. Other distributions carry the same three under the same names,
+though the system copy follows the Debian multiarch layout; `just status` reports
+where it landed.
+
+Then:
+
+```sh
+git clone https://github.com/marcelogomes90/libcosmic-gtk-appearance
+cd libcosmic-gtk-appearance
 just setup
 ```
 
