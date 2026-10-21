@@ -13,7 +13,6 @@ const SKIPPED: i32 = 77;
 fn decorations() -> Decorations {
     Decorations {
         active_icon: Rgba::parse("#63D0DFFF").unwrap(),
-        backdrop_icon: Rgba::parse("#BEBEBEFF").unwrap(),
         hover: Rgba::parse("#63636333").unwrap(),
         pressed: Rgba::parse("#16161680").unwrap(),
         radius: 8.0,

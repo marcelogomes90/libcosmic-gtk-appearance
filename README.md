@@ -111,6 +111,7 @@ number this library chose.
 | title bars, toolbars and window handles | cleared, so the window background reaches the top of the window |
 | window control icons | `accent_text` or `accent.base`, and the hover and pressed tints from `icon_button` |
 | icon buttons in a title bar | the same accent, because they are the same kind of control; filled buttons keep their own colour |
+| those icons and the title in a window without focus | halfway between `card_fg_color` and `headerbar_bg_color`, which is how COSMIC dims a window that lost it |
 | the radius behind a window control | `corner_radii.radius_xl` |
 | title bar height and padding | `CosmicTk/v1/header_size` |
 | spacing between window controls | `spacing.space_xxs` |

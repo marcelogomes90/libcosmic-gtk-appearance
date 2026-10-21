@@ -21,8 +21,10 @@ pub const GTK3_FALLBACK_PALETTE: &str = "\
 @define-color view_bg_color @theme_base_color;
 @define-color headerbar_bg_color @theme_bg_color;
 @define-color headerbar_fg_color @theme_fg_color;
+@define-color card_fg_color @theme_fg_color;
 @define-color sidebar_bg_color @theme_base_color;
 ";
+const BACKDROP_ICON: &str = "mix(@card_fg_color, @headerbar_bg_color, 0.5)";
 const CONTROL_ICON: u16 = 16;
 const CONTROL_PADDING: u16 = 8;
 const HEADER_CONTENT: u16 = 32;
@@ -40,14 +42,14 @@ impl Tokens {
         match decorations {
             Some(theme) => Self {
                 active_icon: theme.active_icon.to_string(),
-                backdrop_icon: theme.backdrop_icon.to_string(),
+                backdrop_icon: BACKDROP_ICON.into(),
                 hover: theme.hover.to_string(),
                 pressed: theme.pressed.to_string(),
                 radius: format!("{}px", theme.radius),
             },
             None => Self {
                 active_icon: "@headerbar_fg_color".into(),
-                backdrop_icon: "@headerbar_fg_color".into(),
+                backdrop_icon: BACKDROP_ICON.into(),
                 hover: "alpha(@headerbar_fg_color, 0.15)".into(),
                 pressed: "alpha(@headerbar_fg_color, 0.28)".into(),
                 radius: "4px".into(),
@@ -453,7 +455,6 @@ mod tests {
     fn decorations() -> Decorations {
         Decorations {
             active_icon: Rgba::parse("#63D0DFFF").unwrap(),
-            backdrop_icon: Rgba::parse("#BEBEBEFF").unwrap(),
             hover: Rgba::parse("#63636333").unwrap(),
             pressed: Rgba::parse("#16161680").unwrap(),
             radius: 160.0,

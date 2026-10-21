@@ -67,7 +67,6 @@ pub struct Padding {
 #[derive(Clone, Copy)]
 pub struct Decorations {
     pub active_icon: Rgba,
-    pub backdrop_icon: Rgba,
     pub hover: Rgba,
     pub pressed: Rgba,
     pub radius: f32,
@@ -96,7 +95,6 @@ impl Appearance {
                 .as_deref()
                 .and_then(optional_colour)
                 .or_else(|| Rgba::parse(field(&accent, "base")?))?,
-            backdrop_icon: Rgba::parse(field(&icon_button, "on")?)?,
             hover: Rgba::parse(field(&icon_button, "hover")?)?,
             pressed: Rgba::parse(field(&icon_button, "pressed")?)?,
             radius: first_number(field(&corner_radii, "radius_xl")?)?,
