@@ -198,7 +198,21 @@ fn optional_colour(text: &str) -> Option<Rgba> {
         .strip_prefix("Some(")
         .and_then(|rest| rest.strip_suffix(')'))
         .unwrap_or(trimmed);
-    Rgba::parse(inner)
+    Rgba::parse(inner).or_else(|| component_colour(inner))
+}
+
+fn component_colour(text: &str) -> Option<Rgba> {
+    let listed = text.replace([',', '(', ')'], "\n");
+    let channel = |name: &str| -> Option<u8> {
+        let value: f32 = field(&listed, name)?.parse().ok()?;
+        Some((value.clamp(0.0, 1.0) * 255.0).round() as u8)
+    };
+    Some(Rgba {
+        red: channel("red")?,
+        green: channel("green")?,
+        blue: channel("blue")?,
+        alpha: channel("alpha").unwrap_or(u8::MAX),
+    })
 }
 
 pub fn watched_directories(config_dir: &str) -> Vec<PathBuf> {
@@ -386,6 +400,29 @@ mod tests {
         assert_eq!(
             optional_colour("Some(\"#63D0DFFF\")").unwrap().to_string(),
             optional_colour("#63D0DFFF").unwrap().to_string()
+        );
+    }
+
+    #[test]
+    fn a_colour_written_as_components_reaches_the_same_channels() {
+        let stored = "Some((
+    red: 0.5522019,
+    green: 0.19897074,
+    blue: 0.00000004813075,
+    alpha: 1.0,
+))";
+        assert_eq!(
+            optional_colour(stored).unwrap().to_string(),
+            "rgba(141, 51, 0, 1.000)"
+        );
+    }
+
+    #[test]
+    fn components_outside_the_range_stay_inside_a_channel() {
+        let stored = "(red: -0.5, green: 2.0, blue: 0.5)";
+        assert_eq!(
+            optional_colour(stored).unwrap().to_string(),
+            "rgba(0, 255, 128, 1.000)"
         );
     }
 }
